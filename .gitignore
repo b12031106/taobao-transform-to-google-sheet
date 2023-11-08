@@ -1,0 +1,6 @@
+results
+.DS_Store
+.vscode/
+logs/
+vendor/
+Token.php
