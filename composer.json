@@ -1,0 +1,13 @@
+{
+    "name": "justinhsu/iop-sdk-php-20200901",
+    "require": {
+        "google/apiclient": "^2.15",
+        "spatie/async": "^1.6"
+    },
+    "authors": [
+        {
+            "name": "Justin Hsu",
+            "email": "b12031106@gmail.com"
+        }
+    ]
+}

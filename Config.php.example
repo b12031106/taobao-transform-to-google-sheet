@@ -1,0 +1,11 @@
+<?php
+
+$token_body = '{"access_token":"abc","refresh_token":"cde","user_id":"12345","account_platform":"seller_center","refresh_expires_in":5184000,"expires_in":2592000,"seller_id":"5678","account":"app@email.com","short_code":"","code":"0","request_id":"aaaa"}';
+$app_key = 'app key';
+$app_secret = 'app secret';
+
+$google_credential_path = 'filepath-to-your-google-client-credential.json';
+
+$spreadsheetId = '1234567';
+$fetch_spus_list_started_at = '2023-11-01 00:00:00';
+$fetch_spus_list_ended_at = '2023-11-11 00:00:00';
