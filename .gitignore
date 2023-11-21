@@ -5,3 +5,4 @@ logs/
 vendor/
 Token.php
 Config.php
+demo
