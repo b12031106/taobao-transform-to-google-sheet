@@ -971,7 +971,7 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
             $file_metadata,
             [
                 'data' => file_get_contents($full_path),
-                'mimeType' => 'application/octet-stream',
+                'mimeType' => 'application/vnd.google-apps.spreadsheet',
                 'uploadType' => 'media',
             ]
         );
