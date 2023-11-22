@@ -967,12 +967,13 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
 
         usleep($google_api_delay_ms);
 
-        $file = $drive_service->files->create(
+        $file = $drive_service->files->insert(
             $file_metadata,
             [
                 'data' => file_get_contents($full_path),
                 'mimeType' => 'application/vnd.google-apps.spreadsheet',
                 'uploadType' => 'media',
+                'convert' => true,
             ]
         );
 
