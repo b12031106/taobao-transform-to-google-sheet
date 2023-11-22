@@ -402,6 +402,7 @@ function writeToGoogleSheets($scroll_id = '')
     global $spreadsheet_id;
     global $fetch_spus_list_started_at;
     global $fetch_spus_list_ended_at;
+    global $adjust_row_height;
 
     $start_unixtime = strtotime($fetch_spus_list_started_at);
     $end_unixtime = strtotime($fetch_spus_list_ended_at);
@@ -720,13 +721,16 @@ function writeToGoogleSheets($scroll_id = '')
                         'requests' => $requests
                     ]
                 );
-                $sheet_service->spreadsheets->batchUpdate(
-                    $spreadsheet_id,
-                    $batchUpdateRequest
-                );
 
-                usleep($google_api_delay_ms);
-                echo "\nupdate row height success.";
+                if ($adjust_row_height) {
+                    $sheet_service->spreadsheets->batchUpdate(
+                        $spreadsheet_id,
+                        $batchUpdateRequest
+                    );
+
+                    usleep($google_api_delay_ms);
+                    echo "\nupdate row height success.";
+                }
             }
 
             $stop = hrtime(true) - $start;
