@@ -1009,7 +1009,7 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
         $sheet_id = 0;
 
         $start_index = 1;
-        $end_index = count($rows) - 1;
+        $end_index = count($rows);
         $row_height = 100;
 
         // adjust row height
