@@ -931,11 +931,115 @@ function getAllFileInDrive(Google_Service_Drive $drive_service, $folder_id)
     );
 }
 
+function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
+{
+    $google_api_delay_ms = 500;
+
+    $google_client = getGoogleClient();
+    $drive_service = getDriveService($google_client);
+    $sheet_service = getSheetService($google_client);
+
+    // get all csv files
+    $realpath = realpath($source_folder_path);
+
+    $dir = opendir($realpath);
+    while (($file = readdir($dir)) !== false) {
+        if (pathinfo($file, PATHINFO_EXTENSION) !== 'csv') {
+            continue;
+        }
+
+        $filename = pathinfo($file, PATHINFO_FILENAME);
+
+        $full_path = $realpath . '/' . $file;
+        $size = filesize($full_path);
+
+        if ($size === 0) {
+            continue;
+        }
+
+        $file_metadata = new Google_Service_Drive_DriveFile(
+            [
+                'name' => $filename,
+                'mimeType' => 'text/csv',
+                'parents' => [$folder_id],
+            ]
+        );
+
+        usleep($google_api_delay_ms);
+
+        $file = $drive_service->files->create(
+            $file_metadata,
+            [
+                'data' => file_get_contents($full_path),
+                'mimeType' => 'application/octet-stream',
+                'uploadType' => 'media',
+            ]
+        );
+
+        $uploaded_file_id = $file->id;
+
+        usleep($google_api_delay_ms);
+
+        // 將上傳的文件轉換為 Google Sheets 格式
+        $conversion_request = new Google_Service_Sheets_ConvertCsvToSpreadsheetRequest();
+        $conversion_response = $sheet_service->spreadsheets->batchUpdate(
+            $uploaded_file_id,
+            [
+                'requests' => [
+                    'convertToSpreadsheet' => $conversion_request,
+                ],
+            ]
+        );
+
+        $new_spreadsheet_id = $conversion_response->getSpreadsheetId();
+
+        logs("{$filename} process success, spreadsheet id {$new_spreadsheet_id}");
+
+        $sheet_index = 0;
+        $dimension_range = new Google_Service_Sheets_DimensionRange(
+            [
+                'sheetId' => $sheet_index,
+                'dimension' => 'ROWS',
+                'startIndex' => 1, // 從第二行開始
+                'endIndex' => null, // 到最後一行
+            ]
+        );
+        $row_properties = new Google_Service_Sheets_DimensionProperties(
+            [
+                'pixelSize' => 100, // 行高為 100 像素
+            ]
+        );
+
+        $update_dimension_request = new Google_Service_Sheets_UpdateDimensionPropertiesRequest(
+            [
+                'range' => $dimension_range,
+                'properties' => $row_properties,
+                'fields' => 'pixelSize', // 僅更新 pixelSize 屬性
+            ]
+        );
+
+        usleep($google_api_delay_ms);
+
+        // 進行更新維度的請求
+        $sheet_service->spreadsheets->get(
+            $new_spreadsheet_id,
+            $update_dimension_request
+        );
+
+        logs('update row height done');
+    }
+
+    closedir($dir);
+}
+
 $scroll_id = isset($argv[1]) ? $argv[1] : '';
+$source_folder_path = isset($argv[1]) ? $argv[1] : '';
+$drive_folder_id = isset($argv[2]) ? $argv[2] : '';
 
 // writeToGoogleSheets($scroll_id);
-writeToCsv($scroll_id);
+// writeToCsv($scroll_id);
 // fetchAllProductLists($scroll_id);
+uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id);
 
 // generateNewToken('2_500916_0nsfw0PQScwVkdZfyiRCuNfR9');
 
