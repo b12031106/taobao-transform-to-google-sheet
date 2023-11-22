@@ -978,6 +978,8 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
 
         $uploaded_file_id = $file->id;
 
+        logs("upload success, file id: {$uploaded_file_id}");
+
         usleep($google_api_delay_ms);
 
         // 將上傳的文件轉換為 Google Sheets 格式
