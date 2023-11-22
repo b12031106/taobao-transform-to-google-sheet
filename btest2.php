@@ -957,79 +957,92 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
             continue;
         }
 
+        $fp = fopen($full_path, 'r');
+        $rows = [];
+        while (($row = fgetcsv($fp)) !== false) {
+            $rows[] = $row;
+        }
+        fclose($fp);
+
         $file_metadata = new Google_Service_Drive_DriveFile(
             [
                 'name' => $filename,
-                'mimeType' => 'text/csv',
+                'mimeType' => 'application/vnd.google-apps.spreadsheet',
                 'parents' => [$drive_folder_id],
             ]
         );
 
         usleep($google_api_delay_ms);
+        $new_file = $drive_service
+            ->files
+            ->create(
+                $file_metadata,
+                [
+                    'fields' => 'id,webViewLink',
+                ]
+            );
 
-        $file = $drive_service->files->insert(
-            $file_metadata,
+        $webview_link = $new_file->getWebViewLink();
+        logs("new file webview link: {$webview_link}");
+
+        $spreadsheet_id = extractSheetIdFromWebViewLink(
+            $webview_link
+        );
+
+        $values = new Google_Service_Sheets_ValueRange(
             [
-                'data' => file_get_contents($full_path),
-                'mimeType' => 'application/vnd.google-apps.spreadsheet',
-                'uploadType' => 'media',
-                'convert' => true,
+                'values' => $rows,
             ]
         );
 
-        $uploaded_file_id = $file->id;
-
-        logs("upload success, file id: {$uploaded_file_id}");
-
         usleep($google_api_delay_ms);
-
-        // 將上傳的文件轉換為 Google Sheets 格式
-        $conversion_request = new Google_Service_Sheets_ConvertCsvToSpreadsheetRequest();
-        $conversion_response = $sheet_service->spreadsheets->batchUpdate(
-            $uploaded_file_id,
+        $sheet_service->spreadsheets_values->append(
+            $spreadsheet_id,
+            'Sheet1',
+            $values,
             [
-                'requests' => [
-                    'convertToSpreadsheet' => $conversion_request,
+                'valueInputOption' => 'USER_ENTERED',
+            ]
+        );
+        logs("write to google sheets done (" . count($rows) . ")");
+
+        $sheet_id = 0;
+
+        $start_index = 1;
+        $end_index = count($rows) - 1;
+        $row_height = 100;
+
+        // adjust row height
+        $requests = [
+            [
+                'updateDimensionProperties' => [
+                    'range' => [
+                        'sheetId' => $sheet_id,
+                        'dimension' => 'ROWS',
+                        'startIndex' => $start_index,// + 1 for header
+                        'endIndex' => $end_index,
+                    ],
+                    'properties' => [
+                        'pixelSize' => $row_height, // 设置行高度为 100px
+                    ],
+                    'fields' => 'pixelSize',
                 ],
-            ]
-        );
+            ],
+        ];
 
-        $new_spreadsheet_id = $conversion_response->getSpreadsheetId();
-
-        logs("{$filename} process success, spreadsheet id {$new_spreadsheet_id}");
-
-        $sheet_index = 0;
-        $dimension_range = new Google_Service_Sheets_DimensionRange(
+        $batchUpdateRequest = new Google_Service_Sheets_BatchUpdateSpreadsheetRequest(
             [
-                'sheetId' => $sheet_index,
-                'dimension' => 'ROWS',
-                'startIndex' => 1, // 從第二行開始
-                'endIndex' => null, // 到最後一行
-            ]
-        );
-        $row_properties = new Google_Service_Sheets_DimensionProperties(
-            [
-                'pixelSize' => 100, // 行高為 100 像素
-            ]
-        );
-
-        $update_dimension_request = new Google_Service_Sheets_UpdateDimensionPropertiesRequest(
-            [
-                'range' => $dimension_range,
-                'properties' => $row_properties,
-                'fields' => 'pixelSize', // 僅更新 pixelSize 屬性
+                'requests' => $requests
             ]
         );
 
         usleep($google_api_delay_ms);
-
-        // 進行更新維度的請求
-        $sheet_service->spreadsheets->get(
-            $new_spreadsheet_id,
-            $update_dimension_request
+        $sheet_service->spreadsheets->batchUpdate(
+            $spreadsheet_id,
+            $batchUpdateRequest
         );
 
-        logs('update row height done');
+        logs("update row height success. {$spreadsheet_id}");
     }
 
     closedir($dir);
