@@ -358,6 +358,11 @@ function processAllProductLists($page_count = 1)
     } while (file_exists($next_file_path));
 }
 
+function logs($msg)
+{
+    echo "\n[" . date('Y-m-d H:i:s') . "] " . $msg;
+}
+
 function getHeaderRow()
 {
     return [
@@ -381,6 +386,11 @@ function extractSheetIdFromWebViewLink($link)
 {
     preg_match('/\/d\/([^\/]+)/', $link, $matches);
     return $matches[1];
+}
+
+function filePathEscape($str)
+{
+    return str_replace('/', '|', $str);
 }
 
 function getIndexFromRange($range)
@@ -407,11 +417,8 @@ function writeToGoogleSheets($scroll_id = '')
     $start_unixtime = strtotime($fetch_spus_list_started_at);
     $end_unixtime = strtotime($fetch_spus_list_ended_at);
 
-    echo "\n";
-    echo "duration: ";
-    echo date('Y-m-d H:i:s', $start_unixtime);
-    echo " ~ ";
-    echo date('Y-m-d H:i:s', $end_unixtime);
+    logs("duration: ");
+    logs(date('Y-m-d H:i:s', $start_unixtime) . " ~ " . date('Y-m-d H:i:s', $end_unixtime));
 
     $api_delay_seconds = 1;
     $google_api_delay_ms = 500;
@@ -432,20 +439,20 @@ function writeToGoogleSheets($scroll_id = '')
     usleep($google_api_delay_ms);
 
     foreach ($files as $file_name => $file_id) {
-        echo "\nfound file: {$file_name} {$file_id}";
+        logs("found file: {$file_name} {$file_id}");
     }
 
     do {
         $page_count += 1;
 
         $start = hrtime(true);
-        echo "\nprocess page {$page_count}, scroll_id: {$scroll_id}";
+        logs("process page {$page_count}, scroll_id: {$scroll_id}");
 
         $json = productSpusGetByScroll($start_unixtime, $end_unixtime, $scroll_id);
 
         $stop = hrtime(true) - $start;
-        echo "\nfetch done, time: " . ($stop / 1000000000);
-        echo "\ncurrent memory useage: " . (memory_get_usage() / 1024 / 1024) . ' MB';
+        logs("fetch done, time: " . ($stop / 1000000000));
+        logs("current memory useage: " . (memory_get_usage() / 1024 / 1024) . ' MB');
 
         // echo "\nspus response:";
         // echo "\n{$json}";
@@ -460,7 +467,7 @@ function writeToGoogleSheets($scroll_id = '')
         $surplus_total = $response['data']['surplus_total'];
         $results_total = $response['data']['results_total'];
 
-        echo "\nsurplus_total: {$surplus_total}, results_total: {$results_total}";
+        logs("surplus_total: {$surplus_total}, results_total: {$results_total}");
 
         $product_chunks = array_chunk($product_list, $product_details_query_chunk_size);
 
@@ -475,7 +482,7 @@ function writeToGoogleSheets($scroll_id = '')
             );
 
             $start = hrtime(true);
-            echo "\nprocess details chunk idx: {$chunk_idx}: ";
+            logs("process details chunk idx: {$chunk_idx}: ");
             // echo implode(', ', $item_ids);
 
             sleep($api_delay_seconds);
@@ -487,7 +494,7 @@ function writeToGoogleSheets($scroll_id = '')
             // echo "\n{$product_details_json}";
 
             if (!isset($response['data']['goods_info_list'])) {
-                echo "\n cannot get goods_info_list, skip";
+                logs("cannot get goods_info_list, skip");
                 continue;
             }
 
@@ -498,7 +505,7 @@ function writeToGoogleSheets($scroll_id = '')
             foreach ($spus as $spu) {
                 $spus_count += 1;
                 $item_id = $spu['item_id'];
-                echo "\n({$spus_count}) process item: {$item_id}";
+                logs("({$spus_count}) process item: {$item_id}");
                 $attributes = array_map(
                     function ($attribute) {
                         $property = $attribute['pTextMulti']['langAndValueMap']['CN_zh']['value'];
@@ -614,7 +621,7 @@ function writeToGoogleSheets($scroll_id = '')
                 $include_header = false;
 
                 if (!array_key_exists($category_path, $files)) {
-                    echo "\n{$category_path} not exists in google drive, create";
+                    logs("{$category_path} not exists in google drive, create");
 
                     $file_name = $category_path;
                     // $spreadsheet = new Google_Service_Sheets_Spreadsheet(
@@ -643,7 +650,7 @@ function writeToGoogleSheets($scroll_id = '')
                     usleep($google_api_delay_ms);
                     $webview_link = $new_file->getWebViewLink();
 
-                    echo "\nnew file webview link: {$webview_link}";
+                    logs("new file webview link: {$webview_link}");
 
                     $spreadsheet_id = extractSheetIdFromWebViewLink(
                         $webview_link
@@ -656,7 +663,7 @@ function writeToGoogleSheets($scroll_id = '')
                     $spreadsheet_id = $files[$category_path];
                 }
 
-                echo "\nappend to {$spreadsheet_id}";
+                logs("append to {$spreadsheet_id}");
 
                 $values = new Google_Service_Sheets_ValueRange(
                     [
@@ -673,7 +680,7 @@ function writeToGoogleSheets($scroll_id = '')
                     ]
                 );
                 usleep($google_api_delay_ms);
-                echo "\nwrite to google sheets done (" . count($rows) . ")";
+                logs("write to google sheets done (" . count($rows) . ")");
 
                 // 取得新增行的結果
                 $updates = $response->getUpdates();
@@ -688,7 +695,7 @@ function writeToGoogleSheets($scroll_id = '')
                     $start_index += 1;
                 }
 
-                echo "\nupdate {$start_index} ~ {$end_index} height";
+                logs("update {$start_index} ~ {$end_index} height");
 
                 // $sheet_id = $sheet_service
                 //     ->spreadsheets
@@ -729,13 +736,177 @@ function writeToGoogleSheets($scroll_id = '')
                     );
 
                     usleep($google_api_delay_ms);
-                    echo "\nupdate row height success.";
+                    logs("update row height success.");
                 }
             }
 
             $stop = hrtime(true) - $start;
-            echo "\nprocess details chunk {$chunk_idx} done, time: " . ($stop / 1000000000);
-            echo "\ncurrent memory useage: " . (memory_get_usage() / 1024 / 1024) . ' MB';
+            logs("process details chunk {$chunk_idx} done, time: " . ($stop / 1000000000));
+            logs("current memory useage: " . (memory_get_usage() / 1024 / 1024) . ' MB');
+        }
+
+    } while ($scroll_id);
+}
+
+function writeToCsv($scroll_id = '')
+{
+    global $fetch_spus_list_started_at;
+    global $fetch_spus_list_ended_at;
+    global $product_list_csv_folder_path;
+
+    $start_unixtime = strtotime($fetch_spus_list_started_at);
+    $end_unixtime = strtotime($fetch_spus_list_ended_at);
+
+    logs("duration: ");
+    logs(date('Y-m-d H:i:s', $start_unixtime) . " ~ " . date('Y-m-d H:i:s', $end_unixtime));
+
+    if (!file_exists($product_list_csv_folder_path)) {
+        logs("folder not exists, create... [{$product_list_csv_folder_path}]");
+        mkdir($product_list_csv_folder_path);
+    }
+
+    $api_delay_seconds = 1;
+
+    $spus_count = 0;
+    $product_details_query_chunk_size = 100;
+
+    $page_count = 0;
+
+    do {
+        $page_count += 1;
+
+        $start = hrtime(true);
+        logs("process page {$page_count}, scroll_id: {$scroll_id}");
+
+        $json = productSpusGetByScroll($start_unixtime, $end_unixtime, $scroll_id);
+
+        $stop = hrtime(true) - $start;
+        logs("fetch done, time: " . ($stop / 1000000000));
+        logs("current memory useage: " . (memory_get_usage() / 1024 / 1024) . ' MB');
+
+        // echo "\nspus response:";
+        // echo "\n{$json}";
+
+        $response = json_decode($json, true);
+
+        sleep($api_delay_seconds);
+
+        $scroll_id = $response['data']['scroll_id'];
+
+        $product_list = $response['data']['product_list'];
+        $surplus_total = $response['data']['surplus_total'];
+        $results_total = $response['data']['results_total'];
+
+        logs("surplus_total: {$surplus_total}, results_total: {$results_total}");
+
+        $product_chunks = array_chunk($product_list, $product_details_query_chunk_size);
+
+        foreach ($product_chunks as $chunk_idx => $chunk) {
+            $rows = [];
+
+            $item_ids = array_map(
+                function ($spu) {
+                    return $spu['item_id'];
+                },
+                $chunk
+            );
+
+            $start = hrtime(true);
+            logs("process details chunk idx: {$chunk_idx}: ");
+            // echo implode(', ', $item_ids);
+
+            sleep($api_delay_seconds);
+
+            $product_details_json = productDetailsQuery($item_ids);
+            $response = json_decode($product_details_json, true);
+
+            // echo "\ndetails response:";
+            // echo "\n{$product_details_json}";
+
+            if (!isset($response['data']['goods_info_list'])) {
+                logs("cannot get goods_info_list, skip");
+                continue;
+            }
+
+            $spus = $response['data']['goods_info_list'];
+
+            $categories_rows = [];
+
+            foreach ($spus as $spu) {
+                $spus_count += 1;
+                $item_id = $spu['item_id'];
+                logs("({$spus_count}) process item: {$item_id}");
+                $attributes = array_map(
+                    function ($attribute) {
+                        $property = $attribute['pTextMulti']['langAndValueMap']['CN_zh']['value'];
+                        $value = $attribute['vTextMulti']['langAndValueMap']['CN_zh']['value'];
+                        return "{$property}：{$value}";
+                    },
+                    $spu['attributes']
+                );
+
+                $sku_prices = array_map(
+                    function ($sku) {
+                        return $sku['price'];
+                    },
+                    $spu['skus']
+                );
+
+
+                $min_price = min($sku_prices);
+                $max_price = max($sku_prices);
+
+                $spu_image = count($spu['images']) > 0
+                    ? $spu['images'][0]
+                    : '';
+
+                $spu_image_display = $spu_image
+                    ? "=IMAGE(\"" . $spu_image . "\")"
+                    : '';
+
+                $distributor_link = 'https://distributor.taobao.global/apps/product/detail?mpId=' . (string) $spu['item_id'];
+
+                $categories_rows[$spu['tb_category_path']][] = [
+                    '',
+                    "'{$spu['item_id']}", // item id
+                    $spu['cn_title'], // cn_title
+                    $spu['tb_category_id'], // category_id
+                    $spu['tb_category_path'], // category_path
+                    count($spu['skus']), // sku count
+                    $min_price,
+                    $max_price,
+                    $spu['supplier_nick'],
+                    $spu_image,
+                    $spu_image_display,
+                    join(', ', $attributes),
+                    $distributor_link
+                ];
+            }
+
+            foreach ($categories_rows as $category_path => $rows) {
+                $escape_filename = filePathEscape($category_path);
+                logs("process {$category_path}, escape: {$escape_filename}");
+                $csv_filepath = "{$product_list_csv_folder_path}/" . $escape_filename . ".csv";
+
+                if (!file_exists($csv_filepath)) {
+                    logs("first time append, add headers");
+                    $rows[] = getHeaderRow();
+                }
+
+                $fp = fopen($csv_filepath, 'a+');
+
+                foreach ($rows as $row) {
+                    fputcsv($fp, $row);
+                }
+
+                fclose($fp);
+
+                logs("append to {$csv_filepath} (" . count($rows) . ")");
+            }
+
+            $stop = hrtime(true) - $start;
+            logs("process details chunk {$chunk_idx} done, time: " . ($stop / 1000000000));
+            logs("current memory useage: " . (memory_get_usage() / 1024 / 1024) . ' MB');
         }
 
     } while ($scroll_id);
@@ -743,7 +914,7 @@ function writeToGoogleSheets($scroll_id = '')
 
 function getAllFileInDrive(Google_Service_Drive $drive_service, $folder_id)
 {
-    echo "\nfetch files from {$folder_id}";
+    logs("fetch files from {$folder_id}");
     $files = $drive_service->files->listFiles(
         [
             'q' => "'{$folder_id}' in parents and trashed=false",
@@ -762,10 +933,31 @@ function getAllFileInDrive(Google_Service_Drive $drive_service, $folder_id)
 
 $scroll_id = isset($argv[1]) ? $argv[1] : '';
 
-writeToGoogleSheets($scroll_id);
+// writeToGoogleSheets($scroll_id);
+writeToCsv($scroll_id);
 // fetchAllProductLists($scroll_id);
 
 // generateNewToken('2_500916_0nsfw0PQScwVkdZfyiRCuNfR9');
 
+// $strs = [
+//     '节庆用品/礼品>装扮用品>挂饰/生肖挂饰',
+//     '节庆用品\/礼品>装扮用品>挂饰\/生肖挂饰',
+//     '节庆用品/礼品>节日用品>圣诞袜',
+//     '节庆用品\/礼品>节日用品>圣诞袜',
+//     '收纳整理>家庭收纳用具>收纳盒>内衣收纳盒',
+//     '居家布艺>地垫(新)>厨房地垫',
+// ];
+
+// foreach ($strs as $idx => $str) {
+//     echo "\n=== {$idx} === \n";
+//     echo "\n=== {$str} === \n";
+//     $product_list_csv_folder_path = '/Users/justinhsu/tmp/product_list';
+//     $escape_filename = filePathEscape($str);
+//     $str = str_replace('/', '|', $str);
+//     $csv_filepath = "{$product_list_csv_folder_path}/" . $str . ".csv";
+//     $fp = fopen($csv_filepath, 'a+');
+//     fclose($fp);
+//     echo "\n\n";
+// }
 
 
