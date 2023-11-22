@@ -253,19 +253,152 @@ function generateNewToken($code)
     echo getAuthTokenCreate($code);
 }
 
-function getSheetService()
+function getGoogleClient()
 {
     global $google_credential_path;
 
     $client = new Google_Client();
     $client->setApplicationName('淘寶匯入到 google sheet');
     $client->setAuthConfig($google_credential_path);
-    $client->setScopes(['https://www.googleapis.com/auth/spreadsheets']);
+    $client->setScopes([
+        Google_Service_Sheets::SPREADSHEETS,
+        Google_Service_Drive::DRIVE,
+    ]);
+    $client->setAccessType('offline');
+
+    return $client;
+}
+
+function getSheetService(Google_Client $client)
+{
     return new Google_Service_Sheets($client);
+}
+
+function getDriveService(Google_Client $client)
+{
+    return new Google_Service_Drive($client);
+}
+
+function fetchAllProductLists($scroll_id = '')
+{
+    global $product_list_csv_folder_path;
+    global $fetch_spus_list_started_at;
+    global $fetch_spus_list_ended_at;
+
+    $start_unixtime = strtotime($fetch_spus_list_started_at);
+    $end_unixtime = strtotime($fetch_spus_list_ended_at);
+
+    $page_count = 0;
+    $api_delay_seconds = 1;
+
+    if (!file_exists($product_list_csv_folder_path)) {
+        echo "\nfolder not exists, create: {$product_list_csv_folder_path}";
+        mkdir($product_list_csv_folder_path);
+    }
+
+    do {
+        $page_count += 1;
+        $file_path = "{$product_list_csv_folder_path}/{$page_count}.json";
+
+        $start = hrtime(true);
+        echo "\nprocess page {$page_count}, scroll_id: {$scroll_id}";
+
+        if (file_exists($file_path)) {
+            echo "\ncache exists {$file_path}";
+            $json = file_get_contents($file_path);
+        } else {
+            $json = productSpusGetByScroll($start_unixtime, $end_unixtime, $scroll_id);
+        }
+
+        $stop = hrtime(true) - $start;
+        echo "\nfetch done, time: " . ($stop / 1000000000);
+        echo "\ncurrent memory useage: " . (memory_get_usage() / 1024 / 1024) . ' MB';
+
+
+        if (!file_exists($file_path)) {
+            echo "\ncache save {$file_path}";
+            file_put_contents($file_path, $json);
+        }
+
+        $response = json_decode($json, true);
+
+        sleep($api_delay_seconds);
+
+        $scroll_id = $response['data']['scroll_id'];
+        $surplus_total = $response['data']['surplus_total'];
+        $results_total = $response['data']['results_total'];
+
+        echo "\nsurplus_total: {$surplus_total}, results_total: {$results_total}";
+    } while ($scroll_id);
+}
+
+function processAllProductLists($page_count = 1)
+{
+    global $product_list_csv_folder_path;
+
+    $product_details_query_chunk_size = 100;
+
+    $next_file_path = "{$product_list_csv_folder_path}/{$page_count}.json";
+
+    if (!file_exists($next_file_path)) {
+        echo "\nfile not found {$next_file_path}";
+        exit;
+    }
+
+    do {
+        $json = file_get_contents($next_file_path);
+        $response = json_decode($json, true);
+        $product_list = $response['data']['product_list'];
+
+        $product_chunks = array_chunk($product_list, $product_details_query_chunk_size);
+
+        // next page
+        $page_count += 1;
+        $next_file_path = "{$product_list_csv_folder_path}/{$page_count}.json";
+    } while (file_exists($next_file_path));
+}
+
+function getHeaderRow()
+{
+    return [
+        'no',
+        'item_id',
+        'cn_title',
+        'tb_category_id',
+        'tb_category_path',
+        'skus count',
+        'min sku price',
+        'max sku price',
+        'supplier_nick',
+        'first image url',
+        'first image',
+        'attributes',
+        'link'
+    ];
+}
+
+function extractSheetIdFromWebViewLink($link)
+{
+    preg_match('/\/d\/([^\/]+)/', $link, $matches);
+    return $matches[1];
+}
+
+function getIndexFromRange($range)
+{
+    // Sheet1!A1:C3
+    $range = explode('!', $range); // 'Sheet1' 'A1:C3'
+    $range = explode(':', $range[1]); // 'A1', 'C3'
+    return array_map(
+        function ($str) {
+            return preg_replace("/[^\d]/", "", $str);
+        },
+        $range
+    );
 }
 
 function writeToGoogleSheets($scroll_id = '')
 {
+    global $folder_id;
     global $spreadsheet_id;
     global $fetch_spus_list_started_at;
     global $fetch_spus_list_ended_at;
@@ -280,8 +413,8 @@ function writeToGoogleSheets($scroll_id = '')
     echo date('Y-m-d H:i:s', $end_unixtime);
 
     $api_delay_seconds = 1;
+    $google_api_delay_ms = 500;
 
-    $service = getSheetService();
     $sheet_name = 'Sheet1';
 
     $spus_count = 0;
@@ -289,6 +422,17 @@ function writeToGoogleSheets($scroll_id = '')
     $row_height = 100;
 
     $page_count = 0;
+
+    $google_client = getGoogleClient();
+    $drive_service = getDriveService($google_client);
+    $sheet_service = getSheetService($google_client);
+    $files = getAllFileInDrive($drive_service, $folder_id);
+
+    usleep($google_api_delay_ms);
+
+    foreach ($files as $file_name => $file_id) {
+        echo "\nfound file: {$file_name} {$file_id}";
+    }
 
     do {
         $page_count += 1;
@@ -348,6 +492,8 @@ function writeToGoogleSheets($scroll_id = '')
 
             $spus = $response['data']['goods_info_list'];
 
+            $categories_rows = [];
+
             foreach ($spus as $spu) {
                 $spus_count += 1;
                 $item_id = $spu['item_id'];
@@ -393,12 +539,22 @@ function writeToGoogleSheets($scroll_id = '')
                 $min_price = min($sku_prices);
                 $max_price = max($sku_prices);
 
+
+
                 $spu_image = count($spu['images']) > 0
-                    ? "=IMAGE(\"" . $spu['images'][0] . "\")"
+                    ? $spu['images'][0]
                     : '';
 
-                $row = [
-                    (string) $spu['item_id'], // item_id
+                $spu_image_display = $spu_image
+                    ? "=IMAGE(\"" . $spu_image . "\")"
+                    : '';
+
+                $distributor_link = 'https://distributor.taobao.global/apps/product/detail?mpId=' . (string) $spu['item_id'];
+
+                $categories_rows[$spu['tb_category_path']][] = [
+                    '',
+                    "'{$spu['item_id']}", // item id
+                    // (string) $spu['item_id'], // item_id
                     $spu['cn_title'], // cn_title
                     $spu['tb_category_id'], // category_id
                     $spu['tb_category_path'], // category_path
@@ -407,11 +563,13 @@ function writeToGoogleSheets($scroll_id = '')
                     $max_price,
                     $spu['supplier_nick'],
                     $spu_image,
+                    $spu_image_display,
                     join(', ', $attributes),
-                    sprintf(
-                        '=HYPERLINK("%s", "供銷平台網址")',
-                        'https://distributor.taobao.global/apps/product/detail?mpId=' . (string) $spu['item_id']
-                    )
+                    // sprintf(
+                    //     '=HYPERLINK("%s", "供銷平台網址")',
+                    //     $distributor_link
+                    // )
+                    $distributor_link
                 ];
 
                 // $sku_attribute_and_image = array_reduce(
@@ -448,48 +606,128 @@ function writeToGoogleSheets($scroll_id = '')
 
                 // echo "values: " . join(' | ', $row);
 
-                $rows[] = $row;
+                // $rows[] = $row;
             }
 
-            $values = new Google_Service_Sheets_ValueRange(
-                [
-                    'values' => $rows,
-                ]
-            );
+            foreach ($categories_rows as $category_path => $rows) {
+                $include_header = false;
 
-            $service->spreadsheets_values->append(
-                $spreadsheet_id,
-                $sheet_name,
-                $values,
-                [
-                    'valueInputOption' => 'USER_ENTERED',
-                ]
-            );
-            echo "\nwrite to google sheets done (" . count($rows) . ")";
+                if (!array_key_exists($category_path, $files)) {
+                    echo "\n{$category_path} not exists in google drive, create";
 
-            // adjust row height
-            $requests = [
-                [
-                    'updateDimensionProperties' => [
-                        'range' => [
-                            'sheetId' => $service->spreadsheets->get($spreadsheet_id)->sheets[0]->properties->sheetId,
-                            'dimension' => 'ROWS',
-                            'startIndex' => max((($page_count - 1) * $product_details_query_chunk_size) - 1, 0) + 1, // + 1 for header
-                            'endIndex' => ($page_count * $product_details_query_chunk_size) - 1 + 1, // + 1 for header
+                    $file_name = $category_path;
+                    // $spreadsheet = new Google_Service_Sheets_Spreadsheet(
+                    //     [
+                    //         'properties' => ['title' => $file_name],
+                    //     ]
+                    // );
+
+                    $file_metadata = new Google_Service_Drive_DriveFile(
+                        [
+                            'name' => $file_name,
+                            'mimeType' => 'application/vnd.google-apps.spreadsheet',
+                            'parents' => [$folder_id], // 指定父資料夾
+                        ]
+                    );
+
+                    $new_file = $drive_service
+                        ->files
+                        ->create(
+                            $file_metadata,
+                            [
+                                'fields' => 'id,webViewLink',
+                            ]
+                        );
+
+                    usleep($google_api_delay_ms);
+                    $webview_link = $new_file->getWebViewLink();
+
+                    echo "\nnew file webview link: {$webview_link}";
+
+                    $spreadsheet_id = extractSheetIdFromWebViewLink(
+                        $webview_link
+                    );
+                    $files[$category_path] = $spreadsheet_id;
+
+                    array_unshift($rows, getHeaderRow());
+                    $include_header = true;
+                } else {
+                    $spreadsheet_id = $files[$category_path];
+                }
+
+                echo "\nappend to {$spreadsheet_id}";
+
+                $values = new Google_Service_Sheets_ValueRange(
+                    [
+                        'values' => $rows,
+                    ]
+                );
+
+                $response = $sheet_service->spreadsheets_values->append(
+                    $spreadsheet_id,
+                    $sheet_name,
+                    $values,
+                    [
+                        'valueInputOption' => 'USER_ENTERED',
+                    ]
+                );
+                usleep($google_api_delay_ms);
+                echo "\nwrite to google sheets done (" . count($rows) . ")";
+
+                // 取得新增行的結果
+                $updates = $response->getUpdates();
+                $updated_range = $updates->getUpdatedRange();
+
+                list($start_index, $end_index) = getIndexFromRange($updated_range);
+
+                $start_index -= 1;
+                $end_index -= 1;
+
+                if ($include_header) {
+                    $start_index += 1;
+                }
+
+                echo "\nupdate {$start_index} ~ {$end_index} height";
+
+                // $sheet_id = $sheet_service
+                //     ->spreadsheets
+                //     ->get($spreadsheet_id)
+                //     ->sheets[0]
+                //     ->properties
+                //     ->sheetId;
+                $sheet_id = 0;
+
+                // adjust row height
+                $requests = [
+                    [
+                        'updateDimensionProperties' => [
+                            'range' => [
+                                'sheetId' => $sheet_id,
+                                'dimension' => 'ROWS',
+                                'startIndex' => $start_index,// + 1 for header
+                                'endIndex' => $end_index,
+                            ],
+                            'properties' => [
+                                'pixelSize' => $row_height, // 设置行高度为 100px
+                            ],
+                            'fields' => 'pixelSize',
                         ],
-                        'properties' => [
-                            'pixelSize' => $row_height, // 设置行高度为 100px
-                        ],
-                        'fields' => 'pixelSize',
                     ],
-                ],
-            ];
+                ];
 
+                $batchUpdateRequest = new Google_Service_Sheets_BatchUpdateSpreadsheetRequest(
+                    [
+                        'requests' => $requests
+                    ]
+                );
+                $sheet_service->spreadsheets->batchUpdate(
+                    $spreadsheet_id,
+                    $batchUpdateRequest
+                );
 
-            $batchUpdateRequest = new Google_Service_Sheets_BatchUpdateSpreadsheetRequest(['requests' => $requests]);
-            $service->spreadsheets->batchUpdate($spreadsheet_id, $batchUpdateRequest);
-
-            echo "\nupdate row height success.";
+                usleep($google_api_delay_ms);
+                echo "\nupdate row height success.";
+            }
 
             $stop = hrtime(true) - $start;
             echo "\nprocess details chunk {$chunk_idx} done, time: " . ($stop / 1000000000);
@@ -499,8 +737,29 @@ function writeToGoogleSheets($scroll_id = '')
     } while ($scroll_id);
 }
 
+function getAllFileInDrive(Google_Service_Drive $drive_service, $folder_id)
+{
+    echo "\nfetch files from {$folder_id}";
+    $files = $drive_service->files->listFiles(
+        [
+            'q' => "'{$folder_id}' in parents and trashed=false",
+        ]
+    );
+
+    return array_reduce(
+        $files->getFiles(),
+        function ($carry, $file) {
+            $carry[$file->name] = $file->getId();
+            return $carry;
+        },
+        [],
+    );
+}
+
 $scroll_id = isset($argv[1]) ? $argv[1] : '';
+
 writeToGoogleSheets($scroll_id);
+// fetchAllProductLists($scroll_id);
 
 // generateNewToken('2_500916_0nsfw0PQScwVkdZfyiRCuNfR9');
 
