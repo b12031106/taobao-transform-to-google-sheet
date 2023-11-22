@@ -943,6 +943,7 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
     $realpath = realpath($source_folder_path);
 
     $dir = opendir($realpath);
+    $file_count = 0;
     while (($file = readdir($dir)) !== false) {
         if (pathinfo($file, PATHINFO_EXTENSION) !== 'csv') {
             continue;
@@ -956,6 +957,10 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
         if ($size === 0) {
             continue;
         }
+
+        $file_count += 1;
+
+        logs("process no.{$file_count} file..");
 
         $fp = fopen($full_path, 'r');
         $rows = [];
