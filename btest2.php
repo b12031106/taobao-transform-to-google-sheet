@@ -961,7 +961,7 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
             [
                 'name' => $filename,
                 'mimeType' => 'text/csv',
-                'parents' => [$folder_id],
+                'parents' => [$drive_folder_id],
             ]
         );
 
