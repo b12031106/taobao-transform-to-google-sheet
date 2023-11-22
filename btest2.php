@@ -971,7 +971,7 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
 
         $file_metadata = new Google_Service_Drive_DriveFile(
             [
-                'name' => $filename,
+                'name' => str_replace('|', '/', $filename),
                 'mimeType' => 'application/vnd.google-apps.spreadsheet',
                 'parents' => [$drive_folder_id],
             ]
