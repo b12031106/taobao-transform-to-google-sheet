@@ -890,7 +890,7 @@ function writeToCsv($scroll_id = '')
 
                 if (!file_exists($csv_filepath)) {
                     logs("first time append, add headers");
-                    $rows[] = getHeaderRow();
+                    array_unshift($rows, getHeaderRow());
                 }
 
                 $fp = fopen($csv_filepath, 'a+');
