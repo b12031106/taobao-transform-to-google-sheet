@@ -260,10 +260,12 @@ function getGoogleClient()
     $client = new Google_Client();
     $client->setApplicationName('淘寶匯入到 google sheet');
     $client->setAuthConfig($google_credential_path);
-    $client->setScopes([
-        Google_Service_Sheets::SPREADSHEETS,
-        Google_Service_Drive::DRIVE,
-    ]);
+    $client->setScopes(
+        [
+            Google_Service_Sheets::SPREADSHEETS,
+            Google_Service_Drive::DRIVE,
+        ]
+    );
     $client->setAccessType('offline');
 
     return $client;
@@ -1053,14 +1055,96 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
     closedir($dir);
 }
 
+function fetchFromGoogleSpreadsheetId($spread_sheet_id)
+{
+    $google_client = getGoogleClient();
+    $sheet_service = getSheetService($google_client);
+
+    $spreadsheet = $sheet_service->spreadsheets->get($spread_sheet_id);
+    $sheets = $spreadsheet->getSheets();
+
+    usleep(500);
+
+    $letters = range('A', 'Z');
+
+    $item_ids = [];
+    $count = 0;
+
+    foreach ($sheets as $sheet_index => $sheet) {
+        $sheet_title = $sheet->properties->title;
+
+        // 設定範圍，僅包含第一行的資料
+        $range = $sheet_title . '!1:1';
+
+        usleep(500);
+        $response = $sheet_service->spreadsheets_values->get(
+            $spread_sheet_id,
+            $range
+        );
+        $values = $response->getValues();
+        $header_row = $values[0];
+
+        $checkbox_column_index = array_search('多匡列POOL', $header_row);
+        $item_id_column_index = array_search('item_id', $header_row);
+
+        if ($checkbox_column_index === false) {
+            logs("sheet[{$sheet_index}]: {$sheet_title} 找不到 多匡列POOL");
+            continue;
+        }
+
+        if ($item_id_column_index === false) {
+            logs("sheet[{$sheet_index}]: {$sheet_title} 找不到 item_id");
+            continue;
+        }
+
+        $checkbox_column = $letters[$checkbox_column_index];
+        $item_id_column = $letters[$item_id_column_index];
+
+        logs("多匡列POOL 欄位：{$checkbox_column}, item_id 欄位：{$item_id_column}");
+
+        // 設定範圍，這裡使用整個工作表的 A 到 B 欄
+        $range = $sheet_title . "!{$checkbox_column}:{$item_id_column}";
+        logs("目標範圍 {$range}");
+
+        usleep(500);
+        $response = $sheet_service->spreadsheets_values->get(
+            $spread_sheet_id,
+            $range
+        );
+        $values = $response->getValues();
+
+        foreach ($values as $value) {
+            if ($value[$checkbox_column_index] !== 'TRUE') {
+                continue;
+            }
+
+            $item_id = trim($value[$item_id_column_index]);
+
+            if (!$item_id) {
+                continue;
+            }
+
+            $count += 1;
+            $item_ids[] = $item_id;
+            logs("found ({$count}) [{$item_id}]");
+        }
+
+        die;
+    }
+}
+
 $scroll_id = isset($argv[1]) ? $argv[1] : '';
+
 $source_folder_path = isset($argv[1]) ? $argv[1] : '';
 $drive_folder_id = isset($argv[2]) ? $argv[2] : '';
+
+$spread_sheet_id = isset($argv[1]) ? $argv[1] : '';
 
 // writeToGoogleSheets($scroll_id);
 // writeToCsv($scroll_id);
 // fetchAllProductLists($scroll_id);
-uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id);
+// uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id);
+fetchFromGoogleSpreadsheetId($spread_sheet_id);
 
 // generateNewToken('2_500916_0nsfw0PQScwVkdZfyiRCuNfR9');
 
