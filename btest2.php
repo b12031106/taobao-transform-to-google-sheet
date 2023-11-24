@@ -1331,7 +1331,7 @@ function fixGoogleSheetItemId($spread_sheet_id)
 
 }
 
-function fixAndFetchItemIdFromDriveFolder($folder_id, $csv_file_path)
+function fetchItemIdFromDriveFolder($folder_id, $csv_file_path)
 {
     $google_client = getGoogleClient();
     $drive_service = getDriveService($google_client);
@@ -1345,15 +1345,9 @@ function fixAndFetchItemIdFromDriveFolder($folder_id, $csv_file_path)
 
         $item_ids = fetchFromGoogleSpreadsheetId($spread_sheet_id);
 
-        fputcsv(
-            $fp,
-            array_map(
-                function ($item_id) {
-                    return [(string) $item_id];
-                },
-                $item_ids
-            )
-        );
+        foreach ($item_ids as $item_id) {
+            fputcsv($fp, [(string) $item_id]);
+        }
     }
 
     fclose($fp);
@@ -1381,15 +1375,16 @@ $drive_folder_id = isset($argv[2]) ? $argv[2] : '';
 $spread_sheet_id = isset($argv[1]) ? $argv[1] : '';
 
 $list_folder_id = isset($argv[1]) ? $argv[1] : '';
+$csv_filepath = isset($argv[2]) ? $argv[2] : '';
 
 // writeToGoogleSheets($scroll_id);
 // writeToCsv($scroll_id);
 // fetchAllProductLists($scroll_id);
 // uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id);
 // fetchFromGoogleSpreadsheetId($spread_sheet_id);
-// fixAndFetchItemIdFromDriveFolder($list_folder_id);
+fetchItemIdFromDriveFolder($list_folder_id, $csv_filepath);
 // fixGoogleSheetItemId($spread_sheet_id);
-fixItemIdsSheetsDriveFolder($list_folder_id);
+// fixItemIdsSheetsDriveFolder($list_folder_id);
 
 // generateNewToken('2_500916_0nsfw0PQScwVkdZfyiRCuNfR9');
 
