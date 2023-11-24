@@ -8,6 +8,12 @@ ini_set('memory_limit', '512M');
 $token = json_decode($token_body, true);
 $access_token = $token['access_token'];
 
+function googleDelay()
+{
+    global $google_api_delay_ms;
+    usleep($google_api_delay_ms);
+}
+
 function getAuthTokenCreate($code)
 {
     global $app_key;
@@ -390,6 +396,11 @@ function extractSheetIdFromWebViewLink($link)
     return $matches[1];
 }
 
+function getSpreadSheetIdFromDriveFile(Google\Service\Drive\DriveFile $file)
+{
+    return $file->getShortcutDetails()->getTargetId();
+}
+
 function filePathEscape($str)
 {
     return str_replace('/', '|', $str);
@@ -438,7 +449,7 @@ function writeToGoogleSheets($scroll_id = '')
     $sheet_service = getSheetService($google_client);
     $files = getAllFileInDrive($drive_service, $folder_id);
 
-    usleep($google_api_delay_ms);
+    googleDelay();
 
     foreach ($files as $file_name => $file_id) {
         logs("found file: {$file_name} {$file_id}");
@@ -649,7 +660,7 @@ function writeToGoogleSheets($scroll_id = '')
                             ]
                         );
 
-                    usleep($google_api_delay_ms);
+                    googleDelay();
                     $webview_link = $new_file->getWebViewLink();
 
                     logs("new file webview link: {$webview_link}");
@@ -681,7 +692,7 @@ function writeToGoogleSheets($scroll_id = '')
                         'valueInputOption' => 'USER_ENTERED',
                     ]
                 );
-                usleep($google_api_delay_ms);
+                googleDelay();
                 logs("write to google sheets done (" . count($rows) . ")");
 
                 // 取得新增行的結果
@@ -737,7 +748,7 @@ function writeToGoogleSheets($scroll_id = '')
                         $batchUpdateRequest
                     );
 
-                    usleep($google_api_delay_ms);
+                    googleDelay();
                     logs("update row height success.");
                 }
             }
@@ -917,19 +928,62 @@ function writeToCsv($scroll_id = '')
 function getAllFileInDrive(Google_Service_Drive $drive_service, $folder_id)
 {
     logs("fetch files from {$folder_id}");
+    googleDelay();
     $files = $drive_service->files->listFiles(
         [
             'q' => "'{$folder_id}' in parents and trashed=false",
+            'orderBy' => 'name',
         ]
     );
 
     return array_reduce(
         $files->getFiles(),
-        function ($carry, $file) {
+        function ($carry, $file) use ($drive_service) {
+            logs("{$file->getName()} {$file->getId()} {$file->getWebViewLink()}");
+            googleDelay();
+            $full_file = $drive_service->files->get(
+                $file->getId(),
+                [
+                    'fields' => '*'
+                ]
+            );
+            logs("{$full_file->getName()} {$full_file->getId()} {$full_file->getWebViewLink()}");
+            var_dump($full_file);
             $carry[$file->name] = $file->getId();
             return $carry;
         },
         [],
+    );
+}
+
+function getAllFilesFromDriveFolderId(Google_Service_Drive $drive_service, $folder_id)
+{
+    logs("fetch files from {$folder_id}");
+    googleDelay();
+    $files = $drive_service->files->listFiles(
+        [
+            'q' => "'{$folder_id}' in parents and trashed=false",
+            'orderBy' => 'name',
+        ]
+    );
+
+    $tmp = [];
+    foreach ($files as $file) {
+        $tmp[] = $file;
+    }
+
+    return array_map(
+        function ($file) use ($drive_service) {
+            logs("fetch file detail: {$file->getName()} {$file->getId()}");
+            googleDelay();
+            return $drive_service->files->get(
+                $file->getId(),
+                [
+                    'fields' => '*'
+                ]
+            );
+        },
+        $tmp
     );
 }
 
@@ -979,7 +1033,7 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
             ]
         );
 
-        usleep($google_api_delay_ms);
+        googleDelay();
         $new_file = $drive_service
             ->files
             ->create(
@@ -1002,7 +1056,7 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
             ]
         );
 
-        usleep($google_api_delay_ms);
+        googleDelay();
         $sheet_service->spreadsheets_values->append(
             $spreadsheet_id,
             'Sheet1',
@@ -1043,7 +1097,7 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
             ]
         );
 
-        usleep($google_api_delay_ms);
+        googleDelay();
         $sheet_service->spreadsheets->batchUpdate(
             $spreadsheet_id,
             $batchUpdateRequest
@@ -1063,7 +1117,7 @@ function fetchFromGoogleSpreadsheetId($spread_sheet_id)
     $spreadsheet = $sheet_service->spreadsheets->get($spread_sheet_id);
     $sheets = $spreadsheet->getSheets();
 
-    usleep(500);
+    googleDelay();
 
     $letters = range('A', 'Z');
 
@@ -1074,15 +1128,28 @@ function fetchFromGoogleSpreadsheetId($spread_sheet_id)
         $sheet_title = $sheet->properties->title;
 
         // 設定範圍，僅包含第一行的資料
-        $range = $sheet_title . '!1:1';
+        $range = "'{$sheet_title}'" . '!1:1';
+        $params = [
+            'valueRenderOption' => 'UNFORMATTED_VALUE',  // 這裡使用 'UNFORMATTED_VALUE' 作為例子，你可以根據需求選擇其他值
+        ];
 
-        usleep(500);
+        logs("process sheet: {$sheet_title} range: [{$range}]");
+
+        googleDelay();
         $response = $sheet_service->spreadsheets_values->get(
             $spread_sheet_id,
-            $range
+            $range,
+            $params
         );
         $values = $response->getValues();
+
+        if (is_null($values)) {
+            logs("header row is empty");
+            continue;
+        }
         $header_row = $values[0];
+
+        logs("第一行：" . implode(', ', $header_row));
 
         $checkbox_column_index = array_search('多匡列POOL', $header_row);
         $item_id_column_index = array_search('item_id', $header_row);
@@ -1103,10 +1170,10 @@ function fetchFromGoogleSpreadsheetId($spread_sheet_id)
         logs("多匡列POOL 欄位：{$checkbox_column}, item_id 欄位：{$item_id_column}");
 
         // 設定範圍，這裡使用整個工作表的 A 到 B 欄
-        $range = $sheet_title . "!{$checkbox_column}:{$item_id_column}";
+        $range = "'{$sheet_title}'" . "!{$checkbox_column}:{$item_id_column}";
         logs("目標範圍 {$range}");
 
-        usleep(500);
+        googleDelay();
         $response = $sheet_service->spreadsheets_values->get(
             $spread_sheet_id,
             $range
@@ -1118,18 +1185,191 @@ function fetchFromGoogleSpreadsheetId($spread_sheet_id)
                 continue;
             }
 
-            $item_id = trim($value[$item_id_column_index]);
+            $before_item_id = trim($value[$item_id_column_index]);
 
-            if (!$item_id) {
+            if (!$before_item_id) {
                 continue;
             }
 
+            $item_id = number_format($before_item_id, 0, '', '');
+
             $count += 1;
             $item_ids[] = $item_id;
-            logs("found ({$count}) [{$item_id}]");
+            logs("found ({$count}) [{$item_id}] ({$before_item_id})");
+        }
+    }
+
+    return $item_ids;
+}
+
+function fixGoogleSheetItemId($spread_sheet_id)
+{
+    $google_client = getGoogleClient();
+    $sheet_service = getSheetService($google_client);
+
+    googleDelay();
+    $spreadsheet = $sheet_service->spreadsheets->get($spread_sheet_id);
+    $sheets = $spreadsheet->getSheets();
+
+    foreach ($sheets as $sheet) {
+        $sheet_name = $sheet->properties->title;
+        $sheet_id = $sheet->properties->sheetId;
+
+        $range = "'{$sheet_name}'" . '!A1:ZZ1';
+
+        logs("process sheet: {$sheet_name} {$sheet_id} range: [{$range}]");
+
+        googleDelay();
+        $response = $sheet_service->spreadsheets_values->get(
+            $spread_sheet_id,
+            $range
+        );
+        $values = $response->getValues();
+
+        if (is_null($values)) {
+            logs("沒有 header, pass");
+            continue;
         }
 
-        die;
+        $header_row = $values[0];
+        $checkbox_column_index = array_search('多匡列POOL', $header_row);
+        $item_id_column_index = array_search('item_id', $header_row);
+        $original_item_id_column_index = array_search('original_item_id', $header_row);
+
+        if ($original_item_id_column_index !== false) {
+            logs('original_item_id found, pass');
+            continue;
+        }
+
+        if ($checkbox_column_index === false) {
+            logs('多匡列POOL column not found, pass');
+            continue;
+        }
+
+        if ($item_id_column_index === false) {
+            logs('item_id column not found, pass');
+            continue;
+        }
+
+        $new_item_id_column_index = $item_id_column_index + 1;
+
+        $insert_row_request = new Google_Service_Sheets_Request(
+            [
+                'insertDimension' => [
+                    'range' => [
+                        'sheetId' => $sheet_id,
+                        'dimension' => 'COLUMNS',
+                        'startIndex' => $item_id_column_index + 1,
+                        'endIndex' => $item_id_column_index + 2,
+                    ],
+                    'inheritFromBefore' => false,
+                ]
+            ]
+        );
+
+        googleDelay();
+        $batch_update_request = new Google_Service_Sheets_BatchUpdateSpreadsheetRequest(
+            [
+                'requests' => [$insert_row_request],
+            ]
+        );
+
+        $sheet_service->spreadsheets->batchUpdate(
+            $spread_sheet_id,
+            $batch_update_request
+        );
+
+        logs('insert new row');
+
+        $char_range = range('A', 'Z');
+        $update_range = sprintf(
+            '\'%s\'!%s1:%s2',
+            $sheet_name,
+            $char_range[$item_id_column_index],
+            $char_range[$new_item_id_column_index]
+        );
+
+        $update_values = [
+            [
+                'original_item_id',
+                'item_id'
+            ],
+            // [
+            //     null, 'efg',
+            // ]
+            [
+                Google_Model::NULL_VALUE,
+                sprintf(
+                    '=ARRAYFORMULA(""&%s2:%s)',
+                    $char_range[$item_id_column_index],
+                    $char_range[$item_id_column_index]
+                )
+            ]
+        ];
+
+        logs("update range: {$update_range}");
+
+        googleDelay();
+        $result = $sheet_service
+            ->spreadsheets_values
+            ->update(
+                $spread_sheet_id,
+                $update_range,
+                new Google_Service_Sheets_ValueRange(
+                    [
+                        'range' => $update_range,
+                        'majorDimension' => 'ROWS',
+                        'values' => $update_values,
+                    ]
+                ),
+                [
+                    'valueInputOption' => 'USER_ENTERED',
+                ]
+            );
+        logs("insert data, updated cells: " . $result->getUpdatedCells());
+    }
+
+}
+
+function fixAndFetchItemIdFromDriveFolder($folder_id, $csv_file_path)
+{
+    $google_client = getGoogleClient();
+    $drive_service = getDriveService($google_client);
+
+    $fp = fopen($csv_file_path, 'a');
+
+    $files = getAllFilesFromDriveFolderId($drive_service, $folder_id);
+    foreach ($files as $file) {
+        $spread_sheet_id = getSpreadSheetIdFromDriveFile($file);
+        logs("{$file->getName()} spread sheet id: {$spread_sheet_id}");
+
+        $item_ids = fetchFromGoogleSpreadsheetId($spread_sheet_id);
+
+        fputcsv(
+            $fp,
+            array_map(
+                function ($item_id) {
+                    return [(string) $item_id];
+                },
+                $item_ids
+            )
+        );
+    }
+
+    fclose($fp);
+}
+
+function fixItemIdsSheetsDriveFolder($folder_id)
+{
+    $google_client = getGoogleClient();
+    $drive_service = getDriveService($google_client);
+
+    $files = getAllFilesFromDriveFolderId($drive_service, $folder_id);
+    foreach ($files as $file) {
+        $spread_sheet_id = getSpreadSheetIdFromDriveFile($file);
+        logs("{$file->getName()} spread sheet id: {$spread_sheet_id}");
+
+        fixGoogleSheetItemId($spread_sheet_id);
     }
 }
 
@@ -1140,11 +1380,16 @@ $drive_folder_id = isset($argv[2]) ? $argv[2] : '';
 
 $spread_sheet_id = isset($argv[1]) ? $argv[1] : '';
 
+$list_folder_id = isset($argv[1]) ? $argv[1] : '';
+
 // writeToGoogleSheets($scroll_id);
 // writeToCsv($scroll_id);
 // fetchAllProductLists($scroll_id);
 // uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id);
-fetchFromGoogleSpreadsheetId($spread_sheet_id);
+// fetchFromGoogleSpreadsheetId($spread_sheet_id);
+// fixAndFetchItemIdFromDriveFolder($list_folder_id);
+// fixGoogleSheetItemId($spread_sheet_id);
+fixItemIdsSheetsDriveFolder($list_folder_id);
 
 // generateNewToken('2_500916_0nsfw0PQScwVkdZfyiRCuNfR9');
 
