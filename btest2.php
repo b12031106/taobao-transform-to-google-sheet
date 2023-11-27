@@ -1191,7 +1191,9 @@ function fetchFromGoogleSpreadsheetId($spread_sheet_id)
                 continue;
             }
 
-            $item_id = number_format($before_item_id, 0, '', '');
+            // number format will break item_id which is long
+            // $item_id = number_format($before_item_id, 0, '', '');
+            $item_id = $before_item_id;
 
             $count += 1;
             $item_ids[] = $item_id;
