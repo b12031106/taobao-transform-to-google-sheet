@@ -1369,6 +1369,8 @@ function fixItemIdsSheetsDriveFolder($folder_id)
     }
 }
 
+$auth_code = isset($argv[1]) ? $argv[1] : '';
+
 $scroll_id = isset($argv[1]) ? $argv[1] : '';
 
 $source_folder_path = isset($argv[1]) ? $argv[1] : '';
@@ -1379,16 +1381,16 @@ $spread_sheet_id = isset($argv[1]) ? $argv[1] : '';
 $list_folder_id = isset($argv[1]) ? $argv[1] : '';
 $csv_filepath = isset($argv[2]) ? $argv[2] : '';
 
+generateNewToken($auth_code);
 // writeToGoogleSheets($scroll_id);
 // writeToCsv($scroll_id);
 // fetchAllProductLists($scroll_id);
 // uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id);
 // fetchFromGoogleSpreadsheetId($spread_sheet_id);
-fetchItemIdFromDriveFolder($list_folder_id, $csv_filepath);
+// fetchItemIdFromDriveFolder($list_folder_id, $csv_filepath);
 // fixGoogleSheetItemId($spread_sheet_id);
 // fixItemIdsSheetsDriveFolder($list_folder_id);
 
-// generateNewToken('2_500916_0nsfw0PQScwVkdZfyiRCuNfR9');
 
 // $strs = [
 //     '节庆用品/礼品>装扮用品>挂饰/生肖挂饰',
