@@ -8,6 +8,11 @@ ini_set('memory_limit', '512M');
 $token = json_decode($token_body, true);
 $access_token = $token['access_token'];
 
+function jsonEncode($variable)
+{
+    return json_encode($variable, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+}
+
 function googleDelay()
 {
     global $google_api_delay_ms;
@@ -398,7 +403,9 @@ function extractSheetIdFromWebViewLink($link)
 
 function getSpreadSheetIdFromDriveFile(Google\Service\Drive\DriveFile $file)
 {
-    return $file->getShortcutDetails()->getTargetId();
+    return $file->getMimeType() === 'application/vnd.google-apps.shortcut'
+        ? $file->getShortcutDetails()->getTargetId()
+        : $file->getId();
 }
 
 function filePathEscape($str)
@@ -419,13 +426,27 @@ function getIndexFromRange($range)
     );
 }
 
-function writeToGoogleSheets($scroll_id = '')
+function writeToGoogleSheets()
 {
-    global $folder_id;
-    global $spreadsheet_id;
-    global $fetch_spus_list_started_at;
-    global $fetch_spus_list_ended_at;
-    global $adjust_row_height;
+    $options = getopt(
+        '',
+        [
+            'folder_id::',
+            'started_at::',
+            'ended_at::',
+            'row_height::',
+            'scroll_id::',
+        ]
+    );
+
+    logs("options: " . json_encode($options));
+
+    $folder_id = $options['folder_id'] ?: '';
+    $fetch_spus_list_started_at = $options['started_at'] ?: '';
+    $fetch_spus_list_ended_at = $options['ended_at'] ?: '';
+    $adjust_row_height = isset($options['row_height']);
+    $row_height = $options['row_height'] ?: 100;
+    $scroll_id = $options['scroll_id'] ?: '';
 
     $start_unixtime = strtotime($fetch_spus_list_started_at);
     $end_unixtime = strtotime($fetch_spus_list_ended_at);
@@ -434,13 +455,11 @@ function writeToGoogleSheets($scroll_id = '')
     logs(date('Y-m-d H:i:s', $start_unixtime) . " ~ " . date('Y-m-d H:i:s', $end_unixtime));
 
     $api_delay_seconds = 1;
-    $google_api_delay_ms = 500;
 
     $sheet_name = 'Sheet1';
 
     $spus_count = 0;
     $product_details_query_chunk_size = 100;
-    $row_height = 100;
 
     $page_count = 0;
 
@@ -761,11 +780,41 @@ function writeToGoogleSheets($scroll_id = '')
     } while ($scroll_id);
 }
 
-function writeToCsv($scroll_id = '')
+function writeToCsv()
 {
-    global $fetch_spus_list_started_at;
-    global $fetch_spus_list_ended_at;
-    global $product_list_csv_folder_path;
+    $options = getopt(
+        '',
+        [
+            'started_at:',
+            'ended_at:',
+            'scroll_id:',
+            'dest_folder_path:',
+            'one_file',
+        ]
+    );
+
+    $fetch_spus_list_started_at = isset($options['started_at']) ? $options['started_at'] : '';
+    $fetch_spus_list_ended_at = isset($options['ended_at']) ? $options['ended_at'] : '';
+    $scroll_id = isset($options['scroll_id']) ? $options['scroll_id'] : '';
+    $product_list_csv_folder_path = isset($options['dest_folder_path']) ? $options['dest_folder_path'] : '';
+    $one_file = isset($options['one_file']);
+
+    logs(
+        "options: " . jsonEncode(
+            [
+                'started_at' => $fetch_spus_list_started_at,
+                'ended_at' => $fetch_spus_list_ended_at,
+                'scroll_id' => $scroll_id,
+                'product_list_csv_folder_path' => $product_list_csv_folder_path,
+                'one_file' => $one_file,
+            ]
+        )
+    );
+
+    if (!$fetch_spus_list_started_at || !$fetch_spus_list_ended_at || !$product_list_csv_folder_path) {
+        logs('missing required options');
+        return false;
+    }
 
     $start_unixtime = strtotime($fetch_spus_list_started_at);
     $end_unixtime = strtotime($fetch_spus_list_ended_at);
@@ -803,6 +852,11 @@ function writeToCsv($scroll_id = '')
         $response = json_decode($json, true);
 
         sleep($api_delay_seconds);
+
+        if (!isset($response['data']['product_list'])) {
+            logs("product list not found, break");
+            break;
+        }
 
         $scroll_id = $response['data']['scroll_id'];
 
@@ -881,7 +935,7 @@ function writeToCsv($scroll_id = '')
 
                 $categories_rows[$spu['tb_category_path']][] = [
                     '',
-                    "'{$spu['item_id']}", // item id
+                    strval($spu['item_id']), // item id
                     $spu['cn_title'], // cn_title
                     $spu['tb_category_id'], // category_id
                     $spu['tb_category_path'], // category_path
@@ -897,7 +951,7 @@ function writeToCsv($scroll_id = '')
             }
 
             foreach ($categories_rows as $category_path => $rows) {
-                $escape_filename = filePathEscape($category_path);
+                $escape_filename = $one_file ? "all-in-one" : filePathEscape($category_path);
                 logs("process {$category_path}, escape: {$escape_filename}");
                 $csv_filepath = "{$product_list_csv_folder_path}/" . $escape_filename . ".csv";
 
@@ -987,9 +1041,32 @@ function getAllFilesFromDriveFolderId(Google_Service_Drive $drive_service, $fold
     );
 }
 
-function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
+function uploadCsvFilesToGoogleSheet()
 {
-    $google_api_delay_ms = 500;
+    $options = getopt(
+        '',
+        [
+            'source_folder_path:',
+            'drive_folder_id:',
+        ]
+    );
+
+    $source_folder_path = isset($options['source_folder_path']) ? $options['source_folder_path'] : '';
+    $drive_folder_id = isset($options['drive_folder_id']) ? $options['drive_folder_id'] : '';
+
+    logs(
+        "options: " . jsonEncode(
+            [
+                'source_folder_path' => $source_folder_path,
+                'drive_folder_id' => $drive_folder_id,
+            ]
+        )
+    );
+
+    if (!$source_folder_path || !$drive_folder_id) {
+        logs("missing required options, break");
+        return false;
+    }
 
     $google_client = getGoogleClient();
     $drive_service = getDriveService($google_client);
@@ -1016,7 +1093,7 @@ function uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id)
 
         $file_count += 1;
 
-        logs("process no.{$file_count} file..");
+        logs("process no.{$file_count} file [{}$filename]..");
 
         $fp = fopen($full_path, 'r');
         $rows = [];
@@ -1152,10 +1229,15 @@ function fetchFromGoogleSpreadsheetId($spread_sheet_id)
         logs("第一行：" . implode(', ', $header_row));
 
         $checkbox_column_index = array_search('多匡列POOL', $header_row);
+        if ($checkbox_column_index === false) {
+            // 試試看 "大POOL"
+            $checkbox_column_index = array_search('大POOL', $header_row);
+        }
+
         $item_id_column_index = array_search('item_id', $header_row);
 
         if ($checkbox_column_index === false) {
-            logs("sheet[{$sheet_index}]: {$sheet_title} 找不到 多匡列POOL");
+            logs("sheet[{$sheet_index}]: {$sheet_title} 找不到 勾選POOL欄位");
             continue;
         }
 
@@ -1167,7 +1249,7 @@ function fetchFromGoogleSpreadsheetId($spread_sheet_id)
         $checkbox_column = $letters[$checkbox_column_index];
         $item_id_column = $letters[$item_id_column_index];
 
-        logs("多匡列POOL 欄位：{$checkbox_column}, item_id 欄位：{$item_id_column}");
+        logs("勾選POOL 欄位：{$checkbox_column}, item_id 欄位：{$item_id_column}");
 
         // 設定範圍，這裡使用整個工作表的 A 到 B 欄
         $range = "'{$sheet_title}'" . "!{$checkbox_column}:{$item_id_column}";
@@ -1234,17 +1316,11 @@ function fixGoogleSheetItemId($spread_sheet_id)
         }
 
         $header_row = $values[0];
-        $checkbox_column_index = array_search('多匡列POOL', $header_row);
         $item_id_column_index = array_search('item_id', $header_row);
         $original_item_id_column_index = array_search('original_item_id', $header_row);
 
         if ($original_item_id_column_index !== false) {
             logs('original_item_id found, pass');
-            continue;
-        }
-
-        if ($checkbox_column_index === false) {
-            logs('多匡列POOL column not found, pass');
             continue;
         }
 
@@ -1296,9 +1372,6 @@ function fixGoogleSheetItemId($spread_sheet_id)
                 'original_item_id',
                 'item_id'
             ],
-            // [
-            //     null, 'efg',
-            // ]
             [
                 Google_Model::NULL_VALUE,
                 sprintf(
@@ -1333,15 +1406,53 @@ function fixGoogleSheetItemId($spread_sheet_id)
 
 }
 
-function fetchItemIdFromDriveFolder($folder_id, $csv_file_path)
+function fetchItemIdFromDriveFolder()
 {
+    $options = getopt(
+        '',
+        [
+            'dest_file_path:',
+            'drive_folder_id:',
+        ]
+    );
+
     $google_client = getGoogleClient();
     $drive_service = getDriveService($google_client);
 
-    $fp = fopen($csv_file_path, 'a');
+    $dest_file_path = isset($options['dest_file_path']) ? $options['dest_file_path'] : '';
+    $drive_folder_id = isset($options['drive_folder_id']) ? $options['drive_folder_id'] : '';
 
-    $files = getAllFilesFromDriveFolderId($drive_service, $folder_id);
+    logs(
+        "options: " . jsonEncode(
+            [
+                'dest_file_path' => $dest_file_path,
+                'drive_folder_id' => $drive_folder_id,
+            ]
+        )
+    );
+
+    if (!$dest_file_path || !$drive_folder_id) {
+        logs("missing required options, break");
+        return false;
+    }
+
+    $fp = fopen($dest_file_path, 'a');
+
+    $files = getAllFilesFromDriveFolderId($drive_service, $drive_folder_id);
+
     foreach ($files as $file) {
+        if ($file->getMimeType() === 'application/vnd.google-apps.folder') {
+            logs($file->getName() . " not an spreadsheets, skip.");
+            continue;
+        }
+
+        if ($file->getMimeType() === 'application/vnd.google-apps.shortcut'
+            && $file->getShortcutDetails()->getTargetMimeType() !== 'application/vnd.google-apps.spreadsheet'
+        ) {
+            logs($file->getName() . " not an spreadsheets, skip.");
+            continue;
+        }
+
         $spread_sheet_id = getSpreadSheetIdFromDriveFile($file);
         logs("{$file->getName()} spread sheet id: {$spread_sheet_id}");
 
@@ -1355,8 +1466,22 @@ function fetchItemIdFromDriveFolder($folder_id, $csv_file_path)
     fclose($fp);
 }
 
-function fixItemIdsSheetsDriveFolder($folder_id)
+function fixItemIdsSheetsDriveFolder()
 {
+    $options = getopt(
+        '',
+        [
+            'folder_id:',
+        ]
+    );
+
+    $folder_id = isset($options['folder_id']) ? $options['folder_id'] : '';
+
+    if (!$folder_id) {
+        logs("missing required options, break");
+        return false;
+    }
+
     $google_client = getGoogleClient();
     $drive_service = getDriveService($google_client);
 
@@ -1381,7 +1506,23 @@ $spread_sheet_id = isset($argv[1]) ? $argv[1] : '';
 $list_folder_id = isset($argv[1]) ? $argv[1] : '';
 $csv_filepath = isset($argv[2]) ? $argv[2] : '';
 
-generateNewToken($auth_code);
+$options = getopt(
+    '',
+    [
+        'name:'
+    ]
+);
+
+$function_name = $options['name'];
+if (!$function_name && function_exists($function_name)) {
+    die('need a function name or function not exists.');
+}
+
+logs("execute {$function_name}");
+call_user_func($function_name);
+
+
+// generateNewToken($auth_code);
 // writeToGoogleSheets($scroll_id);
 // writeToCsv($scroll_id);
 // fetchAllProductLists($scroll_id);
