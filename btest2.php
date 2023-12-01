@@ -3,7 +3,8 @@ require 'vendor/autoload.php';
 require "./IopSdk.php";
 require "./Config.php";
 
-ini_set('memory_limit', '512M');
+date_default_timezone_set('Asia/Taipei');
+ini_set('memory_limit', '1024M');
 
 $token = json_decode($token_body, true);
 $access_token = $token['access_token'];
@@ -1491,6 +1492,170 @@ function fixItemIdsSheetsDriveFolder()
         logs("{$file->getName()} spread sheet id: {$spread_sheet_id}");
 
         fixGoogleSheetItemId($spread_sheet_id);
+    }
+}
+
+function goFixGoogleSheetItemId()
+{
+    $options = getopt(
+        '',
+        [
+            'spreadsheet_id:',
+        ]
+    );
+
+    $spreadsheet_id = isset($options['spreadsheet_id']) ? $options['spreadsheet_id'] : '';
+
+    if (!$spreadsheet_id) {
+        logs("missing required options, break");
+        return false;
+    }
+
+    fixGoogleSheetItemId($spreadsheet_id);
+}
+
+function updateProductStatus()
+{
+    $taobao_api_delay_seconds = 5;
+    $items_chunk_count = 100;
+    $options = getopt(
+        '',
+        [
+            'spreadsheet_id:',
+        ]
+    );
+
+    $spreadsheet_id = isset($options['spreadsheet_id']) ? $options['spreadsheet_id'] : '';
+
+    if (!$spreadsheet_id) {
+        logs("missing required options, break");
+        return false;
+    }
+
+    $google_client = getGoogleClient();
+    $sheet_service = getSheetService($google_client);
+
+    $spreadsheet = $sheet_service->spreadsheets->get($spreadsheet_id);
+    $sheets = $spreadsheet->getSheets();
+
+    foreach ($sheets as $sheet) {
+        $sheet_name = $sheet->properties->title;
+        $sheet_id = $sheet->properties->sheetId;
+
+        $header_range = "'{$sheet_name}'" . '!A1:ZZ1';
+        logs("process sheet: {$sheet_name} {$sheet_id} get header, range: [{$header_range}]");
+
+        googleDelay();
+        $response = $sheet_service->spreadsheets_values->get(
+            $spreadsheet_id,
+            $header_range
+        );
+        $values = $response->getValues();
+
+        if (is_null($values)) {
+            logs("沒有 header, pass");
+            continue;
+        }
+
+        $header_row = $values[0];
+        $item_id_column_index = array_search('item_id', $header_row);
+        $taobao_status_column_index = array_search('taobao_status', $header_row);
+        $taobao_status_updated_at_column_index = array_search('taobao_status_updated_at', $header_row);
+
+        if ($item_id_column_index === false) {
+            logs('item_id not found, pass');
+            continue;
+        }
+
+        if ($taobao_status_column_index === false) {
+            logs('taobao_status column not found, pass');
+            continue;
+        }
+
+        if ($taobao_status_updated_at_column_index === false) {
+            logs('taobao_status column not found, pass');
+            continue;
+        }
+
+        $letters = range('A', 'Z');
+        $item_id_column_letter = $letters[$item_id_column_index];
+        $taobao_status_column_letter = $letters[$taobao_status_column_index];
+        $taobao_status_updated_at_column_letter = $letters[$taobao_status_updated_at_column_index];
+
+        $item_ids_range = "'{$sheet_name}'" . '!' . $item_id_column_letter . '2:' . $item_id_column_letter;
+
+        $response = $sheet_service->spreadsheets_values->get(
+            $spreadsheet_id,
+            $item_ids_range
+        );
+        $values = $response->getValues();
+
+        $rows = array_map(
+            function ($row) {
+                return isset($row[0])
+                    ? $row[0]
+                    : null;
+            },
+            $values
+        );
+
+        $rows = array_values(array_filter($rows));
+
+        $row_chunks = array_chunk($rows, $items_chunk_count);
+
+        foreach ($row_chunks as $chunk_idx => $item_ids) {
+            $temp = [];
+            foreach ($item_ids as $item_id) {
+                $temp[$item_id] = 'MISSING';
+            }
+
+            sleep($taobao_api_delay_seconds);
+            $product_details_json = productDetailsQuery($item_ids);
+            $response = json_decode($product_details_json, true);
+
+            $updated_at = '="' . date('Y-m-d H:i:s') . '"';
+
+            $good_info_list = isset($response['data']['goods_info_list'])
+                ? $response['data']['goods_info_list']
+                : [];
+
+            foreach ($good_info_list as $spu) {
+                $temp[$spu['item_id']] = $spu['status'];
+            }
+
+            $update_rows = [];
+            foreach ($item_ids as $item_id) {
+                logs($item_id . ' => ' . $temp[$item_id]);
+                $update_rows[] = [
+                    $temp[$item_id], $updated_at,
+                ];
+            }
+
+            $values = new Google_Service_Sheets_ValueRange(
+                [
+                    'values' => $update_rows,
+                ]
+            );
+
+            $start_row_index = ($chunk_idx * $items_chunk_count) + 2;
+            $end_row_index = $start_row_index + ($items_chunk_count - 1);
+            $updated_range = "'{$sheet_name}'" . '!'
+                . $taobao_status_column_letter . $start_row_index
+                . ':'
+                . $taobao_status_updated_at_column_letter . $end_row_index;
+
+            googleDelay();
+            $response = $sheet_service->spreadsheets_values->update(
+                $spreadsheet_id,
+                $updated_range,
+                $values,
+                [
+                    'valueInputOption' => 'USER_ENTERED',
+                ]
+            );
+
+            logs("update {$updated_range} done");
+        }
     }
 }
 
