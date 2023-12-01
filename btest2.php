@@ -1522,10 +1522,12 @@ function updateProductStatus()
         '',
         [
             'spreadsheet_id:',
+            'start_row_index:',
         ]
     );
 
     $spreadsheet_id = isset($options['spreadsheet_id']) ? $options['spreadsheet_id'] : '';
+    $start_row_index = isset($options['start_row_index']) ? intval($options['start_row_index']) : 2;
 
     if (!$spreadsheet_id) {
         logs("missing required options, break");
@@ -1582,7 +1584,7 @@ function updateProductStatus()
         $taobao_status_column_letter = $letters[$taobao_status_column_index];
         $taobao_status_updated_at_column_letter = $letters[$taobao_status_updated_at_column_index];
 
-        $item_ids_range = "'{$sheet_name}'" . '!' . $item_id_column_letter . '2:' . $item_id_column_letter;
+        $item_ids_range = "'{$sheet_name}'" . '!' . $item_id_column_letter . $start_row_index . ':' . $item_id_column_letter;
 
         $response = $sheet_service->spreadsheets_values->get(
             $spreadsheet_id,
@@ -1599,13 +1601,14 @@ function updateProductStatus()
             $values
         );
 
-        $rows = array_values(array_filter($rows));
-
         $row_chunks = array_chunk($rows, $items_chunk_count);
 
         foreach ($row_chunks as $chunk_idx => $item_ids) {
             $temp = [];
             foreach ($item_ids as $item_id) {
+                if (is_null($item_id)) {
+                    continue;
+                }
                 $temp[$item_id] = 'MISSING';
             }
 
@@ -1625,9 +1628,10 @@ function updateProductStatus()
 
             $update_rows = [];
             foreach ($item_ids as $item_id) {
-                logs($item_id . ' => ' . $temp[$item_id]);
+                $status = is_null($item_id) ? '' : $temp[$item_id];
+                logs($item_id . ' => ' . $status);
                 $update_rows[] = [
-                    $temp[$item_id], $updated_at,
+                    $status, $updated_at,
                 ];
             }
 
@@ -1637,12 +1641,12 @@ function updateProductStatus()
                 ]
             );
 
-            $start_row_index = ($chunk_idx * $items_chunk_count) + 2;
-            $end_row_index = $start_row_index + ($items_chunk_count - 1);
+            $chunk_start_row_index = ($chunk_idx * $items_chunk_count) + $start_row_index;
+            $chunk_end_row_index = $chunk_start_row_index + ($items_chunk_count - 1);
             $updated_range = "'{$sheet_name}'" . '!'
-                . $taobao_status_column_letter . $start_row_index
+                . $taobao_status_column_letter . $chunk_start_row_index
                 . ':'
-                . $taobao_status_updated_at_column_letter . $end_row_index;
+                . $taobao_status_updated_at_column_letter . $chunk_end_row_index;
 
             googleDelay();
             $response = $sheet_service->spreadsheets_values->update(
