@@ -63,7 +63,7 @@ class IopClient
 		{
 			$url .= "&" ."$key=" . urlencode($value);
 		}
-// var_dump(["url" => $url]);
+
 	    curl_setopt($ch, CURLOPT_URL, $url);
 	    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_FAILONERROR, false);
@@ -185,6 +185,7 @@ class IopClient
 		}
 		$data .= "--" . $delimiter . "--";
 
+		curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
 		curl_setopt($ch, CURLOPT_POST, true);
 		curl_setopt($ch, CURLOPT_HTTPHEADER ,
 			array(
@@ -200,10 +201,11 @@ class IopClient
 		unset($data);
 
 		$errno = curl_errno($ch);
+		$error_string = curl_error($ch);
 		if ($errno)
 		{
 			curl_close($ch);
-			throw new Exception($errno,0);
+			throw new Exception($error_string, $errno);
 		}
 		else
 		{
@@ -211,7 +213,7 @@ class IopClient
 			curl_close($ch);
 			if (200 !== $httpStatusCode)
 			{
-				throw new Exception($response,$httpStatusCode);
+				throw new Exception($response, $httpStatusCode);
 			}
 		}
 

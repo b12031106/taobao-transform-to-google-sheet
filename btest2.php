@@ -52,6 +52,8 @@ function get($path, $params = []): string
 function post($path, $params = []) : string
 {
     global $access_token;
+    global $app_key;
+    global $app_secret;
 
     $c = new IopClient('https://api.taobao.global/rest', $app_key, $app_secret);
     $request = new IopRequest($path, 'POST');
@@ -66,35 +68,6 @@ function post($path, $params = []) : string
 function jsonPretty(string $response) : string
 {
     return json_encode(json_decode($response, true), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-}
-
-function productSpusGet($page_no = 1)
-{
-    $start_unixtime = strtotime('2023-10-25 00:00:00');
-    $end_unixtime = strtotime('2023-10-28 00:00:00');
-
-    echo "\n";
-    echo date('Y-m-d H:i:s', $start_unixtime);
-    echo " ~ ";
-    echo date('Y-m-d H:i:s', $end_unixtime);
-
-    $start_modified_time = $start_unixtime * 1000;
-    $end_modified_time = $end_unixtime * 1000;
-
-    $spus_get_type = 'PAGINATION';
-    $spus_get_type = 'SCROLL';
-
-    $scroll_id = 'eJxdUstuxCAM/Bpy6SVAnocctrvtsb+AUOJsaHmkQKpmv74mD6ktQoKxxxMzjtAyRNEvPjjf8YbzsuBVU3HG6zYTofdawPcsojLQ0aptiqrIC8pqmo0Q+0mMCvQQOg9aRuWsUAPhz3eDkh5khAMYN6hxPcAyD3smgNbg9xIz72dUUcN5iseUaFHGJeBF2S+w0fkkNHvVb+phFj3KYbWYZZx+h6w0cAaNVNicuYvFa4TOD6K3UXDj7JY/A/R/oB7kmj6OzwnOZqPzRsbuPd0/F/Br1zs7qjvht0lFwi9lnhN23WkIExGxBy/tBylfg3pg2xeWWBXuTQOLCWt2O5CTjLgQVjOa4yp50dKKIiasfbq83Z4S9/Ak0Y7UrjcqHVGE39BplDqNf0mzozjWpJhvKn8J1224jBUbIQuAzxpEalrEdYYOfwIPIeCIfwAXubhL';
-
-    return get('/product/spus/get', [
-        'page_size' => 500,
-        'start_modified_time' => $start_modified_time,
-        'end_modified_time' => $end_modified_time,
-        'status' => 'normal',
-        'spus_get_type' => $spus_get_type,
-        //'page_no' => $page_no,
-        'scroll_id' => $scroll_id,
-    ]);
 }
 
 function productSpusGetByScroll($start_unixtime, $end_unixtime, $scroll_id, $page_size = 500)
@@ -116,149 +89,15 @@ function productSpusGetByScroll($start_unixtime, $end_unixtime, $scroll_id, $pag
         $params['scroll_id'] = $scroll_id;
     }
 
-    return get('/product/spus/get', $params);
-}
-
-function itemGet($item_id)
-{
-    return get('/item/get', ['item_id' => $item_id]);
+    return post('/product/spus/get', $params);
 }
 
 function productDetailsQuery($item_ids)
 {
-    return get('/product/details/query', [
+    return post('/product/details/query', [
         'items' => sprintf('[%s]', implode(',', $item_ids)),
-        // 'market_code' => 'TW',
     ]);
 }
-
-function deliveryAddressGet()
-{
-    return get('/delivery/address/get', [
-        'country' => '228',
-    ]);
-}
-
-function getOrderItem()
-{
-    return [
-        'item_id' => '2048241117207587',
-        'quantity' => 1,
-        'sku_id' => '5159117406243',
-    ];
-}
-
-function getWarehouseAddress()
-{
-    return json_encode([
-        'zip' => 111111,
-        'country' => '中国',
-        'state' => '浙江',
-        'city' => '杭州市',
-        'address' => '小王新村',
-        'name' => '大明',
-        'mobile_phone' => '15432456575',
-    ]);
-}
-
-function getOrderData()
-{
-    return [
-        'need_supplychain_service' => 'false',
-        'receiver_address' => json_encode([
-            'zip' => 110,
-            'country' => '台灣',
-            'address' => '南港區三重路19之3號D棟5F',
-        ]),
-        'render_item_List' => json_encode([
-            getOrderItem(),
-        ]),
-        'warehouse_address' => getWarehouseAddress(),
-    ];
-}
-
-function purchaseOrderRender()
-{
-    // 台北市115南港區三重路19之3號D棟5F
-    return get('/purchase/order/render', getOrderData());
-}
-
-function purchaseOrderCreate()
-{
-    return post('/purchase/order/create', [
-        'outer_purchase_id' => date('YmdHis') . rand(1000, 9999),
-        'purchase_amount' => '443',
-        'order_line_list' => json_encode([
-            [
-                'item_id' => '2048241117207587',
-                'orderLineNo' => 1,
-                'quantity' => 1,
-                'price' => 23,
-                'currency' => 'CNY',
-                'title' => '測試商品',
-                'skuId' => '5159117406243',
-            ]
-        ]),
-        'receiver' => getWarehouseAddress(),
-        'warehouse_address_info' => getWarehouseAddress(),
-    ]);
-}
-
-function productRelationBuild($item_ids)
-{
-    return get('/product/relation/build', [
-        'item_ids' => sprintf('[%s]', implode(',', $item_ids)),
-    ]);
-}
-
-function purchaseOrdersQuery()
-{
-    return get('/purchase/orders/query', [
-        'modify_time_start' => strtotime('before 30 days') * 1000,
-        'modify_time_end' => strtotime('after 30 days') * 1000,
-    ]);
-}
-
-function mpidGet($item_id)
-{
-    return get('/mpId/get', [
-        'item_id' => $item_id,
-    ]);
-}
-
-function promotionQuery($mp_id)
-{
-    return get('/promotion/query', [
-        'param' => $mp_id,
-    ]);
-}
-
-// $item_id = '641592387397';
-$item_id = '2048241117207587';
-
-$requests = [
-    // productSpusGet(),
-    // itemGet($item_id),
-    // productDetailsQuery([$item_id]),
-    // deliveryAddressGet(),
-    // purchaseOrderRender(),
-    // purchaseOrderCreate(),
-    // productRelationBuild('731350215252'),
-    // purchaseOrdersQuery(),
-    // mpidGet($item_id),
-    // promotionQuery($item_id),
-];
-
-foreach ($requests as $request) {
-    echo "\n" . jsonPretty($request);
-}
-// echo "\n" . jsonPretty($product_spus_get);
-
-// $item_get = get('/item/get', ['item_id' => '641592387397']);
-// echo "\n" . jsonPretty($item_get);
-
-// $product_details_query = get('/product/details/query', ['items' => "[641592387397]"]);
-// echo "\n" . jsonPretty($product_details_query);
 
 function generateNewToken($code)
 {
@@ -555,32 +394,8 @@ function writeToGoogleSheets()
                     $spu['skus']
                 );
 
-                // $skus_string = implode(
-                //     ', ',
-                //     array_map(
-                //         function ($sku) {
-                //             return implode(
-                //                 '+',
-                //                 array_map(
-                //                     function ($attribute) {
-                //                         return sprintf(
-                //                             '%s：%s',
-                //                             $attribute['pTextMulti']['langAndValueMap']['CN_zh']['value'],
-                //                             $attribute['vTextMulti']['langAndValueMap']['CN_zh']['value']
-                //                         );
-                //                     },
-                //                     $sku['attributes']
-                //                 )
-                //             );
-                //         },
-                //         $spu['skus']
-                //     )
-                // );
-
                 $min_price = min($sku_prices);
                 $max_price = max($sku_prices);
-
-
 
                 $spu_image = count($spu['images']) > 0
                     ? $spu['images'][0]
@@ -612,42 +427,6 @@ function writeToGoogleSheets()
                     // )
                     $distributor_link
                 ];
-
-                // $sku_attribute_and_image = array_reduce(
-                //     array_slice($spu['skus'], 0, 3),
-                //     function ($carry, $sku) {
-                //         $attribute_string = implode(
-                //             '+',
-                //             array_map(
-                //                 function ($attribute) {
-                //                     return sprintf(
-                //                         '%s：%s',
-                //                         $attribute['pTextMulti']['langAndValueMap']['CN_zh']['value'],
-                //                         $attribute['vTextMulti']['langAndValueMap']['CN_zh']['value']
-                //                     );
-                //                 },
-                //                 $sku['attributes']
-                //             )
-                //         );
-                //         $attribute_image = count($sku['images']) > 0
-                //             ? "=IMAGE(\"" . $sku['images'][0] . "\")"
-                //             : '';
-
-                //         $carry[] = $attribute_string;
-                //         $carry[] = $attribute_image;
-                //         return $carry;
-                //     },
-                //     []
-                // );
-
-                // $row = array_merge(
-                //     $row,
-                //     $sku_attribute_and_image
-                // );
-
-                // echo "values: " . join(' | ', $row);
-
-                // $rows[] = $row;
             }
 
             foreach ($categories_rows as $category_path => $rows) {
@@ -657,11 +436,6 @@ function writeToGoogleSheets()
                     logs("{$category_path} not exists in google drive, create");
 
                     $file_name = $category_path;
-                    // $spreadsheet = new Google_Service_Sheets_Spreadsheet(
-                    //     [
-                    //         'properties' => ['title' => $file_name],
-                    //     ]
-                    // );
 
                     $file_metadata = new Google_Service_Drive_DriveFile(
                         [
@@ -730,12 +504,6 @@ function writeToGoogleSheets()
 
                 logs("update {$start_index} ~ {$end_index} height");
 
-                // $sheet_id = $sheet_service
-                //     ->spreadsheets
-                //     ->get($spreadsheet_id)
-                //     ->sheets[0]
-                //     ->properties
-                //     ->sheetId;
                 $sheet_id = 0;
 
                 // adjust row height
@@ -856,6 +624,7 @@ function writeToCsv()
 
         if (!isset($response['data']['product_list'])) {
             logs("product list not found, break");
+            logs("json:\n" . $json);
             break;
         }
 
@@ -917,9 +686,8 @@ function writeToCsv()
                     function ($sku) {
                         return $sku['price'];
                     },
-                    $spu['skus']
+                    $spu['skus'] ?: []
                 );
-
 
                 $min_price = min($sku_prices);
                 $max_price = max($sku_prices);
@@ -936,7 +704,7 @@ function writeToCsv()
 
                 $categories_rows[$spu['tb_category_path']][] = [
                     '',
-                    strval($spu['item_id']), // item id
+                    '="' . strval($spu['item_id']) . '"', // item id
                     $spu['cn_title'], // cn_title
                     $spu['tb_category_id'], // category_id
                     $spu['tb_category_path'], // category_path
@@ -1094,7 +862,7 @@ function uploadCsvFilesToGoogleSheet()
 
         $file_count += 1;
 
-        logs("process no.{$file_count} file [{}$filename]..");
+        logs("process no.{$file_count} file [$filename]..");
 
         $fp = fopen($full_path, 'r');
         $rows = [];
@@ -1663,18 +1431,6 @@ function updateProductStatus()
     }
 }
 
-$auth_code = isset($argv[1]) ? $argv[1] : '';
-
-$scroll_id = isset($argv[1]) ? $argv[1] : '';
-
-$source_folder_path = isset($argv[1]) ? $argv[1] : '';
-$drive_folder_id = isset($argv[2]) ? $argv[2] : '';
-
-$spread_sheet_id = isset($argv[1]) ? $argv[1] : '';
-
-$list_folder_id = isset($argv[1]) ? $argv[1] : '';
-$csv_filepath = isset($argv[2]) ? $argv[2] : '';
-
 $options = getopt(
     '',
     [
@@ -1689,38 +1445,3 @@ if (!$function_name && function_exists($function_name)) {
 
 logs("execute {$function_name}");
 call_user_func($function_name);
-
-
-// generateNewToken($auth_code);
-// writeToGoogleSheets($scroll_id);
-// writeToCsv($scroll_id);
-// fetchAllProductLists($scroll_id);
-// uploadCsvFilesToGoogleSheet($source_folder_path, $drive_folder_id);
-// fetchFromGoogleSpreadsheetId($spread_sheet_id);
-// fetchItemIdFromDriveFolder($list_folder_id, $csv_filepath);
-// fixGoogleSheetItemId($spread_sheet_id);
-// fixItemIdsSheetsDriveFolder($list_folder_id);
-
-
-// $strs = [
-//     '节庆用品/礼品>装扮用品>挂饰/生肖挂饰',
-//     '节庆用品\/礼品>装扮用品>挂饰\/生肖挂饰',
-//     '节庆用品/礼品>节日用品>圣诞袜',
-//     '节庆用品\/礼品>节日用品>圣诞袜',
-//     '收纳整理>家庭收纳用具>收纳盒>内衣收纳盒',
-//     '居家布艺>地垫(新)>厨房地垫',
-// ];
-
-// foreach ($strs as $idx => $str) {
-//     echo "\n=== {$idx} === \n";
-//     echo "\n=== {$str} === \n";
-//     $product_list_csv_folder_path = '/Users/justinhsu/tmp/product_list';
-//     $escape_filename = filePathEscape($str);
-//     $str = str_replace('/', '|', $str);
-//     $csv_filepath = "{$product_list_csv_folder_path}/" . $str . ".csv";
-//     $fp = fopen($csv_filepath, 'a+');
-//     fclose($fp);
-//     echo "\n\n";
-// }
-
-
