@@ -6,6 +6,8 @@ require "./Config.php";
 date_default_timezone_set('Asia/Taipei');
 ini_set('memory_limit', '1024M');
 
+const PRODUCT_DETAIL_QUERY_LIMIT = 20;
+
 $token = json_decode($token_body, true);
 $access_token = $token['access_token'];
 
@@ -299,7 +301,7 @@ function writeToGoogleSheets()
     $sheet_name = 'Sheet1';
 
     $spus_count = 0;
-    $product_details_query_chunk_size = 100;
+    $product_details_query_chunk_size = PRODUCT_DETAIL_QUERY_LIMIT;
 
     $page_count = 0;
 
@@ -341,7 +343,10 @@ function writeToGoogleSheets()
 
         logs("surplus_total: {$surplus_total}, results_total: {$results_total}");
 
-        $product_chunks = array_chunk($product_list, $product_details_query_chunk_size);
+        $product_chunks = array_chunk(
+            $product_list,
+            $product_details_query_chunk_size
+        );
 
         foreach ($product_chunks as $chunk_idx => $chunk) {
             $rows = [];
@@ -599,7 +604,7 @@ function writeToCsv()
     $api_delay_seconds = 1;
 
     $spus_count = 0;
-    $product_details_query_chunk_size = 100;
+    $product_details_query_chunk_size = PRODUCT_DETAIL_QUERY_LIMIT;
 
     $page_count = 0;
 
@@ -636,7 +641,10 @@ function writeToCsv()
 
         logs("surplus_total: {$surplus_total}, results_total: {$results_total}");
 
-        $product_chunks = array_chunk($product_list, $product_details_query_chunk_size);
+        $product_chunks = array_chunk(
+            $product_list,
+            $product_details_query_chunk_size
+        );
 
         foreach ($product_chunks as $chunk_idx => $chunk) {
             $rows = [];
@@ -770,8 +778,14 @@ function getAllFileInDrive(Google_Service_Drive $drive_service, $folder_id)
                     'fields' => '*'
                 ]
             );
-            logs("{$full_file->getName()} {$full_file->getId()} {$full_file->getWebViewLink()}");
-            var_dump($full_file);
+            logs(
+                sprintf(
+                    '%s %s %s',
+                    $full_file->getName(),
+                    $full_file->getId(),
+                    $full_file->getWebViewLink()
+                )
+            );
             $carry[$file->name] = $file->getId();
             return $carry;
         },
@@ -1285,7 +1299,7 @@ function goFixGoogleSheetItemId()
 function updateProductStatus()
 {
     $taobao_api_delay_seconds = 5;
-    $items_chunk_count = 100;
+    $items_chunk_count = PRODUCT_DETAIL_QUERY_LIMIT;
     $options = getopt(
         '',
         [
