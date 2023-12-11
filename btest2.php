@@ -554,7 +554,7 @@ function writeToGoogleSheets()
     } while ($scroll_id);
 }
 
-function writeToCsv()
+function fetchToLocalCsv()
 {
     $options = getopt(
         '',
@@ -824,7 +824,7 @@ function getAllFilesFromDriveFolderId(Google_Service_Drive $drive_service, $fold
     );
 }
 
-function uploadCsvFilesToGoogleSheet()
+function importLocalCsvToDriveFolder()
 {
     $options = getopt(
         '',
