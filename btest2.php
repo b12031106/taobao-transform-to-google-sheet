@@ -891,17 +891,20 @@ function importLocalCsvToDriveFolder()
         [
             'source_folder_path:',
             'drive_folder_id:',
+            'start_file_no:',
         ]
     );
 
     $source_folder_path = isset($options['source_folder_path']) ? $options['source_folder_path'] : '';
     $drive_folder_id = isset($options['drive_folder_id']) ? $options['drive_folder_id'] : '';
+    $start_file_no = isset($options['drive_folder_id']) ? $options['drive_folder_id'] : -1;
 
     logs(
         "options: " . jsonEncode(
             [
                 'source_folder_path' => $source_folder_path,
                 'drive_folder_id' => $drive_folder_id,
+                'start_file_no' => $start_file_no,
             ]
         )
     );
@@ -935,6 +938,11 @@ function importLocalCsvToDriveFolder()
         }
 
         $file_count += 1;
+
+        if ($file_count < $start_file_no) {
+            logs("skip {$file_count} [{$filename}] because no before {$start_file_no}");
+            continue;
+        }
 
         logs("process no.{$file_count} file [{$filename}]..");
 
