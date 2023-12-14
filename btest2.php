@@ -824,6 +824,66 @@ function getAllFilesFromDriveFolderId(Google_Service_Drive $drive_service, $fold
     );
 }
 
+function cleanCsvFilesDuplicateItemId()
+{
+    $options = getopt(
+        '',
+        [
+            'source_folder_path:',
+        ]
+    );
+
+    $source_folder_path = isset($options['source_folder_path']) ? $options['source_folder_path'] : '';
+
+    logs(
+        "options: " . jsonEncode(
+            [
+                'source_folder_path' => $source_folder_path,
+            ]
+        )
+    );
+
+    if (!$source_folder_path) {
+        logs("missing required options, break");
+        return false;
+    }
+
+    // get all csv files
+    $realpath = realpath($source_folder_path);
+
+    $dir = opendir($realpath);
+    $file_count = 0;
+    while (($file = readdir($dir)) !== false) {
+        if (pathinfo($file, PATHINFO_EXTENSION) !== 'csv') {
+            continue;
+        }
+
+        $filename = pathinfo($file, PATHINFO_FILENAME);
+        $full_path = $realpath . '/' . $file;
+        $size = filesize($full_path);
+
+        if ($size === 0) {
+            continue;
+        }
+
+        $file_count += 1;
+
+        logs("process no.{$file_count} file [{$filename}]..");
+
+        $rows = file($full_path);
+
+        logs("before rows count: " . count($rows));
+
+        $rows = array_values(array_unique($rows));
+
+        logs("after rows count: " . count($rows));
+
+        file_put_contents($full_path, implode("\n", $rows));
+    }
+
+    logs("finished, proceed {$file_count} files.");
+}
+
 function importLocalCsvToDriveFolder()
 {
     $options = getopt(
@@ -876,7 +936,7 @@ function importLocalCsvToDriveFolder()
 
         $file_count += 1;
 
-        logs("process no.{$file_count} file [$filename]..");
+        logs("process no.{$file_count} file [{$filename}]..");
 
         $fp = fopen($full_path, 'r');
         $rows = [];
