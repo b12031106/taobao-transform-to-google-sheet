@@ -897,7 +897,7 @@ function importLocalCsvToDriveFolder()
 
     $source_folder_path = isset($options['source_folder_path']) ? $options['source_folder_path'] : '';
     $drive_folder_id = isset($options['drive_folder_id']) ? $options['drive_folder_id'] : '';
-    $start_file_no = isset($options['drive_folder_id']) ? $options['drive_folder_id'] : -1;
+    $start_file_no = isset($options['start_file_no']) ? $options['start_file_no'] : -1;
 
     logs(
         "options: " . jsonEncode(
