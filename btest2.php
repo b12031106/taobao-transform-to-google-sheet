@@ -824,6 +824,90 @@ function getAllFilesFromDriveFolderId(Google_Service_Drive $drive_service, $fold
     );
 }
 
+function getFiles($folder_path, $path_extension = 'csv')
+{
+    $realpath = realpath($folder_path);
+    $dir = opendir($realpath);
+    $files = [];
+    while (($file = readdir($dir)) !== false) {
+        if ($path_extension && pathinfo($file, PATHINFO_EXTENSION) !== $path_extension) {
+            continue;
+        }
+
+        $files[] = $realpath . '/' . $file;
+    }
+    return $files;
+}
+
+function listCsvFilesFromLocalFolder()
+{
+    $options = getopt(
+        '',
+        [
+            'source_folder_path:',
+            'dest_csv_filepath:',
+        ]
+    );
+
+    $source_folder_path = isset($options['source_folder_path']) ? $options['source_folder_path'] : '';
+    $dest_csv_filepath = isset($options['dest_csv_filepath']) ? $options['dest_csv_filepath'] : '';
+
+    if (!$source_folder_path || !$dest_csv_filepath) {
+        logs("missing required options, break");
+        return false;
+    }
+
+    logs("target folder: {$source_folder_path}, start...");
+
+    $fp = fopen($dest_csv_filepath, 'w');
+
+    // 寫入 header
+    fputcsv($fp, ['no', 'tb_category_path', 'tb_category_id', 'spus_count']);
+
+    foreach (getFiles($source_folder_path) as $file_index => $filepath) {
+        $file_content = file_get_contents($filepath);
+        $rows = explode("\n", $file_content);
+
+        $rows = array_values(array_filter($rows));
+
+        // 第一行是 header 所以跳過，直接抓第二行 (index 1)
+
+        list(
+            $no,
+            $item_id,
+            $cn_title,
+            $tb_category_id,
+            $tb_category_path,
+            $skus_count,
+            $min_sku_price,
+            $max_sku_price,
+            $supplier_nick,
+            $first_image_url,
+            $first_image,
+            $attributes,
+            $link
+        ) = str_getcsv($rows[1]);
+
+        $data = [
+            $file_index + 1,
+            $tb_category_path,
+            $tb_category_id,
+            count($rows) - 1, // 扣掉 header
+        ];
+
+        logs("put: " . json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+
+        fputcsv(
+            $fp,
+            $data
+        );
+    }
+
+    logs("finished.");
+
+    fclose($fp);
+}
+
 function cleanCsvFilesDuplicateItemId()
 {
     $options = getopt(
