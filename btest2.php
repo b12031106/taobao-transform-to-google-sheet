@@ -1169,6 +1169,11 @@ function fetchFromGoogleSpreadsheetId($spread_sheet_id)
             $checkbox_column_index = array_search('大POOL', $header_row);
         }
 
+        if ($checkbox_column_index === false) {
+            // 最後試試看 "no"
+            $checkbox_column_index = array_search('no', $header_row);
+        }
+
         $item_id_column_index = array_search('item_id', $header_row);
 
         if ($checkbox_column_index === false) {
