@@ -1203,6 +1203,10 @@ function fetchFromGoogleSpreadsheetId($spread_sheet_id)
         $values = $response->getValues();
 
         foreach ($values as $value) {
+            if (!isset($value[$checkbox_column_index])) {
+                continue;
+            }
+
             if ($value[$checkbox_column_index] !== 'TRUE') {
                 continue;
             }
