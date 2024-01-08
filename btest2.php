@@ -1364,21 +1364,23 @@ function fetchItemIdFromDriveFolder()
     $dest_file_path = isset($options['dest_file_path']) ? $options['dest_file_path'] : '';
     $drive_folder_id = isset($options['drive_folder_id']) ? $options['drive_folder_id'] : '';
     $checkbox_header_strings = isset($options['checkbox_header_strings']) ? $options['checkbox_header_strings'] : '多匡列POOL,大POOL,no';
-    $checkbox_header_strings = explode(',', $checkbox_header_strings);
 
     logs(
         "options: " . jsonEncode(
             [
                 'dest_file_path' => $dest_file_path,
                 'drive_folder_id' => $drive_folder_id,
+                'checkbox_header_strings' => $checkbox_header_strings,
             ]
         )
     );
 
-    if (!$dest_file_path || !$drive_folder_id) {
+    if (!$dest_file_path || !$drive_folder_id || !$checkbox_header_strings) {
         logs("missing required options, break");
         return false;
     }
+
+    $checkbox_header_strings = explode(',', $checkbox_header_strings);
 
     $fp = fopen($dest_file_path, 'a');
 
