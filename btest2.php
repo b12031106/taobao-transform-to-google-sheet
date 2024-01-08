@@ -1121,7 +1121,7 @@ function importLocalCsvToDriveFolder()
     closedir($dir);
 }
 
-function fetchFromGoogleSpreadsheetId($spread_sheet_id)
+function fetchFromGoogleSpreadsheetId($spread_sheet_id, $checkbox_column_strings)
 {
     $google_client = getGoogleClient();
     $sheet_service = getSheetService($google_client);
@@ -1163,23 +1163,20 @@ function fetchFromGoogleSpreadsheetId($spread_sheet_id)
 
         logs("第一行：" . implode(', ', $header_row));
 
-        $checkbox_column_index = array_search('多匡列POOL', $header_row);
-        if ($checkbox_column_index === false) {
-            // 試試看 "大POOL"
-            $checkbox_column_index = array_search('大POOL', $header_row);
+        $checkbox_column_index = false;
+        foreach ($checkbox_column_strings as $string) {
+            $checkbox_column_index = array_search($string, $header_row);
+            if ($checkbox_column_index !== false) {
+                break;
+            }
         }
-
-        if ($checkbox_column_index === false) {
-            // 最後試試看 "no"
-            $checkbox_column_index = array_search('no', $header_row);
-        }
-
-        $item_id_column_index = array_search('item_id', $header_row);
 
         if ($checkbox_column_index === false) {
             logs("sheet[{$sheet_index}]: {$sheet_title} 找不到 勾選POOL欄位");
             continue;
         }
+
+        $item_id_column_index = array_search('item_id', $header_row);
 
         if ($item_id_column_index === false) {
             logs("sheet[{$sheet_index}]: {$sheet_title} 找不到 item_id");
@@ -1357,6 +1354,7 @@ function fetchItemIdFromDriveFolder()
         [
             'dest_file_path:',
             'drive_folder_id:',
+            'checkbox_header_strings:',
         ]
     );
 
@@ -1365,6 +1363,8 @@ function fetchItemIdFromDriveFolder()
 
     $dest_file_path = isset($options['dest_file_path']) ? $options['dest_file_path'] : '';
     $drive_folder_id = isset($options['drive_folder_id']) ? $options['drive_folder_id'] : '';
+    $checkbox_header_strings = isset($options['checkbox_header_strings']) ? $options['checkbox_header_strings'] : '多匡列POOL,大POOL,no';
+    $checkbox_header_strings = explode(',', $checkbox_header_strings);
 
     logs(
         "options: " . jsonEncode(
@@ -1400,7 +1400,10 @@ function fetchItemIdFromDriveFolder()
         $spread_sheet_id = getSpreadSheetIdFromDriveFile($file);
         logs("{$file->getName()} spread sheet id: {$spread_sheet_id}");
 
-        $item_ids = fetchFromGoogleSpreadsheetId($spread_sheet_id);
+        $item_ids = fetchFromGoogleSpreadsheetId(
+            $spread_sheet_id,
+            $checkbox_header_strings
+        );
 
         foreach ($item_ids as $item_id) {
             fputcsv($fp, [(string) $item_id]);
